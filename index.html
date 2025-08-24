@@ -24,12 +24,12 @@
   <h2>Señales enviadas</h2>
   <div id="signals"></div>
 
-  <!-- Firebase -->
-  <script src="https://www.gstatic.com/firebasejs/9.6.8/firebase-app.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.6.8/firebase-database.js"></script>
+  <!-- Firebase v8 -->
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
 
   <script>
-    // Tu configuración de Firebase
+    // Configuración de tu Firebase
     const firebaseConfig = {
       apiKey: "AIzaSyDGYEYs5YFZqMpcU0rJSeLxdzCt1iaumis",
       authDomain: "welcomedayarise.firebaseapp.com",
@@ -42,7 +42,7 @@
     };
 
     // Inicializar Firebase
-    const app = firebase.initializeApp(firebaseConfig);
+    firebase.initializeApp(firebaseConfig);
     const db = firebase.database();
 
     let playerId = null;
@@ -50,11 +50,11 @@
     // Botón "Unirse"
     document.getElementById("joinBtn").onclick = async () => {
       const playersRef = db.ref("players");
-      const snapshot = await playersRef.get();
+      const snapshot = await playersRef.once("value");
       const players = snapshot.val() || {};
 
       if (Object.keys(players).length < 2) {
-        playerId = Date.now(); // un ID simple
+        playerId = Date.now(); // ID simple
         playersRef.child(playerId).set(true);
         document.getElementById("controls").style.display = "block";
       } else {
