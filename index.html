@@ -5,15 +5,13 @@
   <title>Juego en Vivo</title>
   <style>
     body { font-family: Arial; text-align: center; margin-top: 50px; }
-    button { margin: 5px; padding: 10px 20px; font-size: 18px; cursor: pointer; }
-    #controls { margin-top: 20px; }
-    #signals { margin-top: 30px; font-size: 24px; }
+    button { margin: 5px; padding: 10px 20px; font-size: 18px; }
+    #signals { margin-top: 20px; font-size: 24px; }
   </style>
 </head>
 <body>
   <h1>Juego en Vivo</h1>
   <button id="joinBtn">Unirse</button>
-
   <div id="controls" style="display:none;">
     <h2>Tus señales</h2>
     <button onclick="sendSignal('A')">A</button>
@@ -31,6 +29,7 @@
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
 
   <script>
+    // Configuración de tu Firebase
     const firebaseConfig = {
       apiKey: "AIzaSyDGYEYs5YFZqMpcU0rJSeLxdzCt1iaumis",
       authDomain: "welcomedayarise.firebaseapp.com",
@@ -42,6 +41,7 @@
       measurementId: "G-8ZXHLVM20C"
     };
 
+    // Inicializar Firebase
     firebase.initializeApp(firebaseConfig);
     const db = firebase.database();
 
@@ -62,19 +62,13 @@
       }
     };
 
-    // Enviar señal solo si eres jugador
+    // Enviar señal
     function sendSignal(signal) {
-      if (!playerId) return; // No es jugador
-      db.ref("players").once("value").then(snapshot => {
-        const players = snapshot.val() || {};
-        if (players[playerId]) {
-          db.ref("signals").push({ signal, from: playerId, time: Date.now() });
-        }
-      });
+      db.ref("signals").push({ signal, from: playerId, time: Date.now() });
     }
 
-    // Escuchar señales
-    db.ref("signals").on("child_added", snap => {
+    // Escuchar señales en vivo
+    db.ref("signals").on("child_added", (snap) => {
       const data = snap.val();
       const div = document.getElementById("signals");
       div.innerHTML = `<div>${data.signal}</div>` + div.innerHTML;
