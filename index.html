@@ -5,13 +5,15 @@
   <title>Juego en Vivo</title>
   <style>
     body { font-family: Arial; text-align: center; margin-top: 50px; }
-    button { margin: 5px; padding: 10px 20px; font-size: 18px; }
-    #signals { margin-top: 20px; font-size: 24px; }
+    button { margin: 5px; padding: 10px 20px; font-size: 18px; cursor: pointer; }
+    #controls { margin-top: 20px; }
+    #signals { margin-top: 30px; font-size: 24px; }
   </style>
 </head>
 <body>
   <h1>Juego en Vivo</h1>
   <button id="joinBtn">Unirse</button>
+
   <div id="controls" style="display:none;">
     <h2>Tus señales</h2>
     <button onclick="sendSignal('A')">A</button>
@@ -27,9 +29,10 @@
   <!-- Firebase v8 -->
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
 
   <script>
-    // Configuración de tu Firebase
+    // Configuración de Firebase
     const firebaseConfig = {
       apiKey: "AIzaSyDGYEYs5YFZqMpcU0rJSeLxdzCt1iaumis",
       authDomain: "welcomedayarise.firebaseapp.com",
@@ -41,11 +44,19 @@
       measurementId: "G-8ZXHLVM20C"
     };
 
-    // Inicializar Firebase
     firebase.initializeApp(firebaseConfig);
     const db = firebase.database();
 
     let playerId = null;
+    let user = null;
+
+    // 🔐 Iniciar sesión anónima al cargar
+    firebase.auth().signInAnonymously().then(cred => {
+      user = cred.user;
+      console.log("Conectado como:", user.uid);
+    }).catch(err => {
+      console.error("Error al autenticar:", err);
+    });
 
     // Botón "Unirse"
     document.getElementById("joinBtn").onclick = async () => {
@@ -54,20 +65,25 @@
       const players = snapshot.val() || {};
 
       if (Object.keys(players).length < 2) {
-        playerId = Date.now(); // ID simple
+        playerId = user.uid;
         playersRef.child(playerId).set(true);
         document.getElementById("controls").style.display = "block";
+        console.log("Te has unido como jugador:", playerId);
       } else {
         alert("Ya hay 2 jugadores, eres espectador.");
       }
     };
 
-    // Enviar señal
+    // Enviar señal (solo si eres jugador)
     function sendSignal(signal) {
+      if (!playerId) {
+        alert("No eres jugador.");
+        return;
+      }
       db.ref("signals").push({ signal, from: playerId, time: Date.now() });
     }
 
-    // Escuchar señales en vivo
+    // Escuchar señales en tiempo real
     db.ref("signals").on("child_added", (snap) => {
       const data = snap.val();
       const div = document.getElementById("signals");
