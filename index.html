@@ -54,7 +54,7 @@
       const players = snapshot.val() || {};
 
       if (Object.keys(players).length < 2) {
-        playerId = Date.now(); // ID simple
+        playerId = Date.now().toString(); // ID simple
         playersRef.child(playerId).set(true);
         document.getElementById("controls").style.display = "block";
       } else {
