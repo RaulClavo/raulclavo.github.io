@@ -7,11 +7,17 @@
     body { font-family: Arial; text-align: center; margin-top: 50px; }
     button { margin: 5px; padding: 10px 20px; font-size: 18px; }
     #signals { margin-top: 20px; font-size: 24px; }
+    #status { margin: 20px; font-size: 20px; font-weight: bold; }
   </style>
 </head>
 <body>
   <h1>Juego en Vivo</h1>
+  
+  <div id="status">Comprobando estado...</div>
+
   <button id="joinBtn">Unirse</button>
+  <button id="leaveBtn" style="display:none;">Salir del juego</button>
+
   <div id="controls" style="display:none;">
     <h2>Tus señales</h2>
     <button onclick="sendSignal('A')">A</button>
@@ -29,7 +35,7 @@
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
 
   <script>
-    // Configuración de tu Firebase
+    // Configuración de Firebase
     const firebaseConfig = {
       apiKey: "AIzaSyDGYEYs5YFZqMpcU0rJSeLxdzCt1iaumis",
       authDomain: "welcomedayarise.firebaseapp.com",
@@ -41,36 +47,80 @@
       measurementId: "G-8ZXHLVM20C"
     };
 
-    // Inicializar Firebase
     firebase.initializeApp(firebaseConfig);
     const db = firebase.database();
 
     let playerId = null;
+    const joinBtn = document.getElementById("joinBtn");
+    const leaveBtn = document.getElementById("leaveBtn");
+    const statusDiv = document.getElementById("status");
 
-    // Botón "Unirse"
-    document.getElementById("joinBtn").onclick = async () => {
-      const playersRef = db.ref("players");
-      const snapshot = await playersRef.once("value");
+    // Comprobar si ya estaba unido
+    if (localStorage.getItem("joinedPlayerId")) {
+      playerId = localStorage.getItem("joinedPlayerId");
+      joinBtn.disabled = true;
+      leaveBtn.style.display = "inline-block";
+      document.getElementById("controls").style.display = "block";
+      statusDiv.textContent = "Estás jugando";
+    }
+
+    // Función para actualizar el estado del juego
+    async function updateStatus() {
+      const snapshot = await db.ref("players").once("value");
       const players = snapshot.val() || {};
+      const numPlayers = Object.keys(players).length;
+
+      if (playerId) {
+        statusDiv.textContent = "Estás jugando";
+      } else if (numPlayers < 2) {
+        statusDiv.textContent = `Huecos libres: ${2 - numPlayers}`;
+      } else {
+        statusDiv.textContent = "Eres espectador";
+      }
+    }
+
+    db.ref("players").on("value", updateStatus);
+
+    // Botón Unirse
+    joinBtn.onclick = async () => {
+      const snapshot = await db.ref("players").once("value");
+      const players = snapshot.val() || {};
+      
+      if (playerId) return;
 
       if (Object.keys(players).length < 2) {
-        playerId = Date.now().toString(); // ID simple
-        playersRef.child(playerId).set(true);
+        playerId = Date.now().toString();
+        await db.ref("players/" + playerId).set(true);
+
+        localStorage.setItem("joinedPlayerId", playerId);
         document.getElementById("controls").style.display = "block";
+        joinBtn.disabled = true;
+        leaveBtn.style.display = "inline-block";
+        updateStatus();
       } else {
         alert("Ya hay 2 jugadores, eres espectador.");
+        updateStatus();
       }
+    };
+
+    // Botón Salir
+    leaveBtn.onclick = async () => {
+      if (!playerId) return;
+
+      await db.ref("players/" + playerId).remove();
+      localStorage.removeItem("joinedPlayerId");
+      playerId = null;
+      document.getElementById("controls").style.display = "none";
+      joinBtn.disabled = false;
+      leaveBtn.style.display = "none";
+      updateStatus();
     };
 
     // Enviar señal
     function sendSignal(signal) {
       const validSignals = ['A', 'B', 'C', 'D', 'E'];
-    
-      if (!validSignals.includes(signal)) {
-        console.warn(`Señal "${signal}" no permitida.`);
-        return; // No envía nada si la señal no es válida
-      }
-    
+      if (!validSignals.includes(signal)) return;
+
       db.ref("signals").push({
         signal,
         from: playerId,
@@ -78,13 +128,14 @@
       });
     }
 
-
     // Escuchar señales en vivo
     db.ref("signals").on("child_added", (snap) => {
       const data = snap.val();
       const div = document.getElementById("signals");
       div.innerHTML = `<div>${data.signal}</div>` + div.innerHTML;
     });
+
+    updateStatus();
   </script>
 </body>
 </html>
