@@ -12,7 +12,7 @@
 </head>
 <body>
   <h1>Juego en Vivo</h1>
-  <button id="joinBtn" disabled>Unirse</button>
+  <button id="joinBtn">Unirse</button>
 
   <div id="controls" style="display:none;">
     <h2>Tus señales</h2>
@@ -29,10 +29,8 @@
   <!-- Firebase v8 -->
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
 
   <script>
-    // Configuración de Firebase
     const firebaseConfig = {
       apiKey: "AIzaSyDGYEYs5YFZqMpcU0rJSeLxdzCt1iaumis",
       authDomain: "welcomedayarise.firebaseapp.com",
@@ -44,54 +42,39 @@
       measurementId: "G-8ZXHLVM20C"
     };
 
-    // Inicializar Firebase
     firebase.initializeApp(firebaseConfig);
     const db = firebase.database();
 
-    const joinBtn = document.getElementById("joinBtn");
     let playerId = null;
-    let user = null;
 
-    // Iniciar sesión anónima
-    firebase.auth().signInAnonymously()
-      .then(cred => {
-        user = cred.user;
-        console.log("Conectado como:", user.uid);
+    // Botón "Unirse"
+    document.getElementById("joinBtn").onclick = async () => {
+      const playersRef = db.ref("players");
+      const snapshot = await playersRef.once("value");
+      const players = snapshot.val() || {};
 
-        // Habilitar botón solo cuando auth lista
-        joinBtn.disabled = false;
-
-        // Configurar click
-        joinBtn.onclick = async () => {
-          const playersRef = db.ref("players");
-          const snapshot = await playersRef.once("value");
-          const players = snapshot.val() || {};
-
-          if (Object.keys(players).length < 2) {
-            playerId = user.uid;
-            playersRef.child(playerId).set(true);
-            document.getElementById("controls").style.display = "block";
-            console.log("Te has unido como jugador:", playerId);
-          } else {
-            alert("Ya hay 2 jugadores, eres espectador.");
-          }
-        };
-      })
-      .catch(err => {
-        console.error("Error al autenticar:", err);
-      });
-
-    // Enviar señal
-    function sendSignal(signal) {
-      if (!playerId) {
-        alert("No eres jugador.");
-        return;
+      if (Object.keys(players).length < 2) {
+        playerId = Date.now(); // ID simple
+        playersRef.child(playerId).set(true);
+        document.getElementById("controls").style.display = "block";
+      } else {
+        alert("Ya hay 2 jugadores, eres espectador.");
       }
-      db.ref("signals").push({ signal, from: playerId, time: Date.now() });
+    };
+
+    // Enviar señal solo si eres jugador
+    function sendSignal(signal) {
+      if (!playerId) return; // No es jugador
+      db.ref("players").once("value").then(snapshot => {
+        const players = snapshot.val() || {};
+        if (players[playerId]) {
+          db.ref("signals").push({ signal, from: playerId, time: Date.now() });
+        }
+      });
     }
 
-    // Escuchar señales en tiempo real
-    db.ref("signals").on("child_added", (snap) => {
+    // Escuchar señales
+    db.ref("signals").on("child_added", snap => {
       const data = snap.val();
       const div = document.getElementById("signals");
       div.innerHTML = `<div>${data.signal}</div>` + div.innerHTML;
