@@ -12,7 +12,7 @@
 </head>
 <body>
   <h1>Juego en Vivo</h1>
-  <button id="joinBtn">Unirse</button>
+  <button id="joinBtn" disabled>Unirse</button>
 
   <div id="controls" style="display:none;">
     <h2>Tus señales</h2>
@@ -44,37 +44,44 @@
       measurementId: "G-8ZXHLVM20C"
     };
 
+    // Inicializar Firebase
     firebase.initializeApp(firebaseConfig);
     const db = firebase.database();
 
+    const joinBtn = document.getElementById("joinBtn");
     let playerId = null;
     let user = null;
 
-    // 🔐 Iniciar sesión anónima al cargar
-    firebase.auth().signInAnonymously().then(cred => {
-      user = cred.user;
-      console.log("Conectado como:", user.uid);
-    }).catch(err => {
-      console.error("Error al autenticar:", err);
-    });
+    // Iniciar sesión anónima
+    firebase.auth().signInAnonymously()
+      .then(cred => {
+        user = cred.user;
+        console.log("Conectado como:", user.uid);
 
-    // Botón "Unirse"
-    document.getElementById("joinBtn").onclick = async () => {
-      const playersRef = db.ref("players");
-      const snapshot = await playersRef.once("value");
-      const players = snapshot.val() || {};
+        // Habilitar botón solo cuando auth lista
+        joinBtn.disabled = false;
 
-      if (Object.keys(players).length < 2) {
-        playerId = user.uid;
-        playersRef.child(playerId).set(true);
-        document.getElementById("controls").style.display = "block";
-        console.log("Te has unido como jugador:", playerId);
-      } else {
-        alert("Ya hay 2 jugadores, eres espectador.");
-      }
-    };
+        // Configurar click
+        joinBtn.onclick = async () => {
+          const playersRef = db.ref("players");
+          const snapshot = await playersRef.once("value");
+          const players = snapshot.val() || {};
 
-    // Enviar señal (solo si eres jugador)
+          if (Object.keys(players).length < 2) {
+            playerId = user.uid;
+            playersRef.child(playerId).set(true);
+            document.getElementById("controls").style.display = "block";
+            console.log("Te has unido como jugador:", playerId);
+          } else {
+            alert("Ya hay 2 jugadores, eres espectador.");
+          }
+        };
+      })
+      .catch(err => {
+        console.error("Error al autenticar:", err);
+      });
+
+    // Enviar señal
     function sendSignal(signal) {
       if (!playerId) {
         alert("No eres jugador.");
