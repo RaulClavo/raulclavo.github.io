@@ -64,8 +64,20 @@
 
     // Enviar señal
     function sendSignal(signal) {
-      db.ref("signals").push({ signal, from: playerId, time: Date.now() });
+      const validSignals = ['A', 'B', 'C', 'D', 'E'];
+    
+      if (!validSignals.includes(signal)) {
+        console.warn(`Señal "${signal}" no permitida.`);
+        return; // No envía nada si la señal no es válida
+      }
+    
+      db.ref("signals").push({
+        signal,
+        from: playerId,
+        time: Date.now()
+      });
     }
+
 
     // Escuchar señales en vivo
     db.ref("signals").on("child_added", (snap) => {
