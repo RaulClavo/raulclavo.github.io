@@ -27,30 +27,34 @@
   <!-- Firebase -->
   <script src="https://www.gstatic.com/firebasejs/9.6.8/firebase-app.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.6.8/firebase-database.js"></script>
+
   <script>
-    // 🔥 Configura tu Firebase (crea un proyecto gratis en Firebase y pega tus claves aquí)
+    // Tu configuración de Firebase
     const firebaseConfig = {
-      apiKey: "TU_API_KEY",
-      authDomain: "TU_PROJECT.firebaseapp.com",
-      databaseURL: "https://TU_PROJECT.firebaseio.com",
-      projectId: "TU_PROJECT",
-      storageBucket: "TU_PROJECT.appspot.com",
-      messagingSenderId: "123456789",
-      appId: "1:123456789:web:abcd"
+      apiKey: "AIzaSyDGYEYs5YFZqMpcU0rJSeLxdzCt1iaumis",
+      authDomain: "welcomedayarise.firebaseapp.com",
+      databaseURL: "https://welcomedayarise-default-rtdb.firebaseio.com", // 👈 IMPORTANTE: agrega esto
+      projectId: "welcomedayarise",
+      storageBucket: "welcomedayarise.firebasestorage.app",
+      messagingSenderId: "417894091538",
+      appId: "1:417894091538:web:a2eab16a056dfc902881cb",
+      measurementId: "G-8ZXHLVM20C"
     };
+
+    // Inicializar Firebase
     const app = firebase.initializeApp(firebaseConfig);
     const db = firebase.database();
 
     let playerId = null;
 
-    // Botón unirse
+    // Botón "Unirse"
     document.getElementById("joinBtn").onclick = async () => {
       const playersRef = db.ref("players");
       const snapshot = await playersRef.get();
       const players = snapshot.val() || {};
 
       if (Object.keys(players).length < 2) {
-        playerId = Date.now(); // id simple
+        playerId = Date.now(); // un ID simple
         playersRef.child(playerId).set(true);
         document.getElementById("controls").style.display = "block";
       } else {
@@ -63,7 +67,7 @@
       db.ref("signals").push({ signal, from: playerId, time: Date.now() });
     }
 
-    // Escuchar señales
+    // Escuchar señales en vivo
     db.ref("signals").on("child_added", (snap) => {
       const data = snap.val();
       const div = document.getElementById("signals");
