@@ -16,7 +16,6 @@
   <div id="status">Comprobando estado...</div>
 
   <button id="joinBtn">Unirse</button>
-  <button id="leaveBtn" style="display:none;">Salir del juego</button>
 
   <div id="controls" style="display:none;">
     <h2>Tus señales</h2>
@@ -35,7 +34,6 @@
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
 
   <script>
-    // Configuración de Firebase
     const firebaseConfig = {
       apiKey: "AIzaSyDGYEYs5YFZqMpcU0rJSeLxdzCt1iaumis",
       authDomain: "welcomedayarise.firebaseapp.com",
@@ -52,19 +50,9 @@
 
     let playerId = null;
     const joinBtn = document.getElementById("joinBtn");
-    const leaveBtn = document.getElementById("leaveBtn");
     const statusDiv = document.getElementById("status");
 
-    // Comprobar si ya estaba unido
-    if (localStorage.getItem("joinedPlayerId")) {
-      playerId = localStorage.getItem("joinedPlayerId");
-      joinBtn.disabled = true;
-      leaveBtn.style.display = "inline-block";
-      document.getElementById("controls").style.display = "block";
-      statusDiv.textContent = "Estás jugando";
-    }
-
-    // Función para actualizar el estado del juego
+    // Función para actualizar el estado
     async function updateStatus() {
       const snapshot = await db.ref("players").once("value");
       const players = snapshot.val() || {};
@@ -90,30 +78,21 @@
 
       if (Object.keys(players).length < 2) {
         playerId = Date.now().toString();
-        await db.ref("players/" + playerId).set(true);
+        const playerRef = db.ref("players/" + playerId);
+        await playerRef.set(true);
 
-        localStorage.setItem("joinedPlayerId", playerId);
+        // Configurar eliminación automática al cerrar la pestaña
+        window.addEventListener("beforeunload", async () => {
+          await playerRef.remove();
+        });
+
         document.getElementById("controls").style.display = "block";
         joinBtn.disabled = true;
-        leaveBtn.style.display = "inline-block";
         updateStatus();
       } else {
         alert("Ya hay 2 jugadores, eres espectador.");
         updateStatus();
       }
-    };
-
-    // Botón Salir
-    leaveBtn.onclick = async () => {
-      if (!playerId) return;
-
-      await db.ref("players/" + playerId).remove();
-      localStorage.removeItem("joinedPlayerId");
-      playerId = null;
-      document.getElementById("controls").style.display = "none";
-      joinBtn.disabled = false;
-      leaveBtn.style.display = "none";
-      updateStatus();
     };
 
     // Enviar señal
