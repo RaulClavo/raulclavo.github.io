@@ -64,7 +64,7 @@
 
     // Enviar señal
     function sendSignal(signal) {
-      db.ref("signals").push({ signal, from: playerId, time: Date.now() });
+      db.ref("signals").push({ signal.toString(), from: playerId, time: Date.now() });
     }
 
     // Escuchar señales en vivo
