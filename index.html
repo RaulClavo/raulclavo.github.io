@@ -167,7 +167,8 @@ function startGame(mode){
     gameStarted=true;
     voteArea.style.display="none";
     controllerArea.style.display=playerId?"block":"none";
-    spectatorArea.style.display="block";
+    // Solo mostrar el área de espectador si NO eres jugador
+    spectatorArea.style.display = playerId ? "none" : "block";
     statusDiv.textContent="Juego iniciado ("+mode+")";
 
     db.ref('players').once('value').then(psnap=>{
@@ -279,7 +280,8 @@ db.ref('signals').orderByChild('signal').equalTo('START:mode1').on('value', snap
         gameStarted = true;
         voteArea.style.display = "none";
         controllerArea.style.display = playerId ? "block" : "none";
-        spectatorArea.style.display = "block";
+        // Solo mostrar el área de espectador si NO eres jugador
+        spectatorArea.style.display = playerId ? "none" : "block";
         statusDiv.textContent = "Juego iniciado (mode1)";
         db.ref('players').once('value').then(psnap => {
             const players = psnap.val()||{};
@@ -299,7 +301,8 @@ db.ref('signals').orderByChild('signal').equalTo('START:mode2').on('value', snap
         gameStarted = true;
         voteArea.style.display = "none";
         controllerArea.style.display = playerId ? "block" : "none";
-        spectatorArea.style.display = "block";
+        // Solo mostrar el área de espectador si NO eres jugador
+        spectatorArea.style.display = playerId ? "none" : "block";
         statusDiv.textContent = "Juego iniciado (mode2)";
         db.ref('players').once('value').then(psnap => {
             const players = psnap.val()||{};
