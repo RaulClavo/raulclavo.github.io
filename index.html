@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>Juego en Vivo</title>
+<title>Juego en Vivo (Modo 2)</title>
 <style>
 body { font-family: Arial; text-align: center; margin-top: 20px; }
 button { margin: 5px; padding: 10px 18px; font-size: 16px; }
@@ -103,7 +103,7 @@ joinBtn.onclick = async () => {
     updateStatus();
 
     if(Object.keys(players).length===1){ // si ya había 1, arrancamos
-        db.ref('signals').push({signal:"START:mode2", from:"system", time:Date.now()});
+        db.ref('signals').push({signal:"START_MODE2", from:"system", time:Date.now()});
     }
 };
 
@@ -127,7 +127,7 @@ function executeQueue(){
 db.ref('signals').on('child_added', snap=>{
     const data = snap.val();
     if(!data) return;
-    if(data.signal.startsWith("START:mode2")){
+    if(data.signal==="START_MODE2"){
         startGame();
     } else if(gameStarted){
         processSignal(data);
