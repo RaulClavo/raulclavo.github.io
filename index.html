@@ -4,22 +4,30 @@
   <meta charset="UTF-8">
   <title>Juego en Vivo</title>
   <style>
-    body { font-family: Arial; text-align: center; margin-top: 50px; }
-    button { margin: 5px; padding: 10px 20px; font-size: 18px; }
-    #signals { margin-top: 20px; font-size: 24px; }
-    #status { margin: 20px; font-size: 20px; font-weight: bold; }
-    #voteArea { margin: 20px; }
+    body { font-family: Arial; text-align: center; margin-top: 40px; }
+    button { margin: 5px; padding: 10px 18px; font-size: 16px; }
+    #signals { margin-top: 20px; font-size: 16px; text-align:left; max-width:700px; margin-left:auto; margin-right:auto; }
+    #status { margin: 14px 0; font-size: 18px; font-weight: bold; }
+    #voteArea { margin: 14px 0; }
+    #gameArea { margin-top: 18px; font-weight: bold; color: #155; }
+    #votesStatus { margin-top: 8px; font-style: italic; }
+    #playersInfo { margin-top: 8px; }
   </style>
 </head>
 <body>
   <h1>Juego en Vivo</h1>
-  
+
   <div id="status">Comprobando estado...</div>
 
-  <button id="joinBtn">Unirse</button>
+  <div>
+    <button id="joinBtn">Unirse</button>
+    <button id="leaveBtn" style="display:none;">Salir</button>
+  </div>
 
-  <div id="controls" style="display:none;">
-    <h2>Tus señales</h2>
+  <div id="playersInfo"></div>
+
+  <div id="controls" style="display:none; margin-top:12px;">
+    <h3>Tus señales</h3>
     <button onclick="sendSignal('A')">A</button>
     <button onclick="sendSignal('B')">B</button>
     <button onclick="sendSignal('C')">C</button>
@@ -27,15 +35,20 @@
     <button onclick="sendSignal('E')">E</button>
   </div>
 
-  <!-- Votación -->
+  <!-- Votación (aparece cuando hay 2 jugadores y estás dentro) -->
   <div id="voteArea" style="display:none;">
-    <h2>Votación de modo</h2>
-    <button onclick="castVote('mode1')">Modo 1</button>
-    <button onclick="castVote('mode2')">Modo 2</button>
+    <h3>Votación del modo</h3>
+    <button onclick="castVote('mode1')">Modo 1 — Una pantalla</button>
+    <button onclick="castVote('mode2')">Modo 2 — Dos pantallas</button>
     <div id="votesStatus">Esperando votos...</div>
   </div>
 
-  <h2>Señales enviadas</h2>
+  <div id="gameArea" style="display:none;">
+    <p id="gameMsg">Juego no iniciado</p>
+    <!-- Aquí más adelante pondremos el canvas / lógica del juego -->
+  </div>
+
+  <h3>Logs de señales</h3>
   <div id="signals"></div>
 
   <!-- Firebase v8 -->
@@ -43,6 +56,7 @@
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
 
   <script>
+    // Configuración Firebase (la tuya)
     const firebaseConfig = {
       apiKey: "AIzaSyDGYEYs5YFZqMpcU0rJSeLxdzCt1iaumis",
       authDomain: "welcomedayarise.firebaseapp.com",
@@ -53,449 +67,182 @@
       appId: "1:417894091538:web:a2eab16a056dfc902881cb",
       measurementId: "G-8ZXHLVM20C"
     };
-
     firebase.initializeApp(firebaseConfig);
     const db = firebase.database();
 
+    // Estado local
     let playerId = null;
-    const joinBtn = document.getElementById("joinBtn");
-    const statusDiv = document.getElementById("status");
-    const voteArea = document.getElementById("voteArea");
+    let playerRef = null;
+    let gameStarted = false;
+    const votes = {}; // { playerId: 'mode1' }
 
-    // Función para actualizar el estado
+    // DOM
+    const joinBtn = document.getElementById('joinBtn');
+    const leaveBtn = document.getElementById('leaveBtn');
+    const statusDiv = document.getElementById('status');
+    const controlsDiv = document.getElementById('controls');
+    const voteArea = document.getElementById('voteArea');
+    const votesStatus = document.getElementById('votesStatus');
+    const signalsDiv = document.getElementById('signals');
+    const playersInfo = document.getElementById('playersInfo');
+    const gameArea = document.getElementById('gameArea');
+    const gameMsg = document.getElementById('gameMsg');
+
+    // Actualizar estado del lobby (players)
     async function updateStatus() {
-      const snapshot = await db.ref("players").once("value");
-      const players = snapshot.val() || {};
-      const numPlayers = Object.keys(players).length;
+      const snap = await db.ref('players').once('value');
+      const players = snap.val() || {};
+      const ids = Object.keys(players);
+      playersInfo.innerHTML = `Jugadores: ${ids.length} / 2 <br> ${ids.join(', ') || '—'}`;
 
-      if (playerId) {
-        statusDiv.textContent = "Estás jugando";
-        // Mostrar votación si hay 2 jugadores
-        if (numPlayers === 2) voteArea.style.display = "block";
-      } else if (numPlayers < 2) {
+      const numPlayers = ids.length;
+      if (playerId && !gameStarted) {
+        statusDiv.textContent = 'Estás jugando';
+      } else if (!playerId && numPlayers < 2) {
         statusDiv.textContent = `Huecos libres: ${2 - numPlayers}`;
-        voteArea.style.display = "none";
+      } else if (!playerId && numPlayers >= 2) {
+        statusDiv.textContent = 'Eres espectador';
+      }
+
+      // Mostramos la votación si estamos dentro y ya hay 2 jugadores (y aún no se empezó el juego)
+      if (playerId && numPlayers === 2 && !gameStarted) {
+        voteArea.style.display = 'block';
       } else {
-        statusDiv.textContent = "Eres espectador";
-        voteArea.style.display = "none";
+        voteArea.style.display = 'none';
       }
     }
 
-    db.ref("players").on("value", updateStatus);
+    // Listener en /players para actualizar UI en tiempo real
+    db.ref('players').on('value', updateStatus);
 
-    // Botón Unirse
+    // Join
     joinBtn.onclick = async () => {
-      const snapshot = await db.ref("players").once("value");
+      const snapshot = await db.ref('players').once('value');
       const players = snapshot.val() || {};
-      
-      if (playerId) return;
+      if (playerId) return; // ya unido en esta pestaña
 
       if (Object.keys(players).length < 2) {
         playerId = Date.now().toString();
-        const playerRef = db.ref("players/" + playerId);
-        await playerRef.set(true);
+        playerRef = db.ref('players/' + playerId);
+        await playerRef.set({ joinedAt: Date.now() });
+        // onDisconnect: eliminar si cierra pestaña o pierde conexión
+        playerRef.onDisconnect().remove();
 
-        // Configurar eliminación automática al cerrar la pestaña
-        window.addEventListener("beforeunload", async () => {
-          await playerRef.remove();
-        });
-
-        document.getElementById("controls").style.display = "block";
+        // UI
         joinBtn.disabled = true;
+        leaveBtn.style.display = 'inline-block';
+        controlsDiv.style.display = 'block';
         updateStatus();
       } else {
-        alert("Ya hay 2 jugadores, eres espectador.");
+        alert('Ya hay 2 jugadores, eres espectador.');
         updateStatus();
       }
     };
 
-    // Enviar señal
-    function sendSignal(signal) {
-      const validSignals = ['A', 'B', 'C', 'D', 'E'];
-      if (!validSignals.includes(signal)) return;
+    // Leave
+    leaveBtn.onclick = async () => {
+      if (!playerId) return;
+      await db.ref('players/' + playerId).remove();
+      // limpiar estado local
+      playerId = null;
+      playerRef = null;
+      controlsDiv.style.display = 'none';
+      joinBtn.disabled = false;
+      voteArea.style.display = 'none';
+      updateStatus();
+    };
 
-      db.ref("signals").push({
+    // Enviar señal normal
+    function sendSignal(signal) {
+      const valid = ['A','B','C','D','E'];
+      if (!playerId) { alert('Únete primero para enviar señales'); return; }
+      if (!valid.includes(signal)) return;
+      db.ref('signals').push({
         signal,
         from: playerId,
         time: Date.now()
       });
     }
 
-    // Votar usando señales
+    // Cast vote via signals
     function castVote(mode) {
-      if (!playerId) { 
-        alert("Debes unirte para votar"); 
-        return; 
-      }
-      db.ref("signals").push({
-        signal: "VOTE:" + mode,
+      if (!playerId) { alert('Únete primero para votar'); return; }
+      if (gameStarted) { alert('Juego ya iniciado'); return; }
+      db.ref('signals').push({
+        signal: 'VOTE:' + mode,
         from: playerId,
         time: Date.now()
       });
     }
 
-    // Escuchar señales y votos
-    let votes = {};
-
-    db.ref("signals").on("child_added", (snap) => {
+    // Escuchar señales en /signals (tanto logs como votos)
+    db.ref('signals').on('child_added', (snap) => {
       const data = snap.val();
-      if (!data || !data.signal) return;
+      if (!data) return;
 
-      const div = document.getElementById("signals");
-      div.innerHTML = `<div>${data.signal}</div>` + div.innerHTML;
+      // Mostrar en logs
+      const timeStr = data.time ? new Date(data.time).toLocaleTimeString() : '';
+      const shortFrom = (data.from && typeof data.from === 'string') ? data.from.slice(-6) : 'anon';
+      const node = document.createElement('div');
+      node.textContent = `[${timeStr}] ${shortFrom} → ${data.signal}`;
+      signalsDiv.prepend(node);
 
-      // Filtrar votos
-      if (data.signal.startsWith("VOTE:")) {
-        const mode = data.signal.split(":")[1];
-        votes[data.from] = mode;
+      // Si es voto, procesarlo
+      if (typeof data.signal === 'string' && data.signal.startsWith('VOTE:')) {
+        const mode = data.signal.split(':',2)[1];
+        votes[data.from] = mode; // el último voto del playerId cuenta
+        renderVotesUI();
 
-        // Mostrar votos
-        document.getElementById("votesStatus").textContent = 
-          Object.entries(votes).map(([pid, m]) => `${pid.slice(-4)} → ${m}`).join(" | ");
-
-        // Si ya votaron 2
-        if (Object.keys(votes).length >= 2) {
-          const countMode1 = Object.values(votes).filter(v => v === "mode1").length;
-          const countMode2 = Object.values(votes).filter(v => v === "mode2").length;
-          const chosen = countMode2 > countMode1 ? "mode2" : "mode1";
-          alert("El juego empieza en: " + chosen);
-          // Aquí iría startGame(chosen);
-
-  /********** GAME LÓGICA **********/
-  // DB structure:
-  // /players/{id}
-  // /votes/{playerId} = 'mode1'|'mode2'
-  // /mode{ chosen: 'mode1'|'mode2' }
-  // /moves/{playerId}/{pushId} -> { seq: [...], time }
-  // /scores/{playerId} -> integer (mode2)
-  // /timer -> { start: timestamp, duration: seconds } (mode2)
-
-  let currentMode = null;
-  let playersState = {}; // { playerId: {x,y,dir,score} }
-
-  function startGame(mode) {
-    currentMode = mode;
-    // show game UI
-    document.getElementById('lobby').classList.add('hidden');
-    gameDiv.classList.remove('hidden');
-    modeInfo.textContent = `Modo elegido: ${mode === 'mode1' ? 'Una pantalla — Espectador ve ambos' : 'Dos pantallas — Compite por niveles'}`;
-
-    // Show/hide second canvas depending on mode
-    if (mode === 'mode1') {
-      colCanvas2.classList.add('hidden');
-      timerDiv.classList.add('hidden');
-    } else {
-      colCanvas2.classList.remove('hidden');
-      timerDiv.classList.remove('hidden');
-      // initialize mode2 timer if not exist
-      db.ref('timer').once('value').then(snap => {
-        if (!snap.exists()) {
-          // set 60 seconds round by default when both players present
-          const duration = 60; // seconds tweakable
-          db.ref('timer').set({start: Date.now(), duration});
-        }
-      });
-    }
-
-    // initialize players states based on current players list
-    db.ref('players').once('value').then(snap => {
-      const p = snap.val() || {};
-      const ids = Object.keys(p);
-      // assign start positions by order
-      playersState = {};
-      ids.forEach((id, idx) => {
-        playersState[id] = {
-          x: idx === 0 ? 0 : GRID_SIZE - 1,
-          y: idx === 0 ? 0 : GRID_SIZE - 1,
-          dir: idx === 0 ? 'right' : 'left',
-          score: 0
-        };
-      });
-      renderAll();
-    });
-
-    // Listen for moves
-    db.ref('moves').on('child_added', async snap => {
-      const playerKey = snap.key; // it's a push under /moves -> but we stored as /moves/{playerId}/{pushId}
-      // but we used moves/{playerId}/{pushId}; child_added on /moves gives playerId nodes.
-    });
-
-    // Instead listen per-player moves (safer)
-    db.ref('moves').on('value', snap => {
-      // We will process every move push present by walking the tree
-      const all = snap.val() || {};
-      // Flatten: for each playerId take its pushes in chronological order
-      for (const pid in all) {
-        const pushes = all[pid] || {};
-        // for each push (pushId) that has not been executed yet, execute.
-        // We'll mark executed pushes by moving them to /moves_executed/{playerId}/{pushId} or by setting a flag executed=true.
-        // To keep DB simpler, we set `executed: true` on the push after executing.
-        for (const pushId in pushes) {
-          const push = pushes[pushId];
-          if (!push || push.executed) continue;
-          executeInstructionsAnimated(pid, push.seq, pushId);
+        // Si ya hay 2 votos (de 2 jugadores) y el juego no ha empezado, decidimos
+        const voterIds = Object.keys(votes).filter(id => !!id);
+        if (!gameStarted) {
+          // comprobar que las 2 entradas son de jugadores actuales
+          db.ref('players').once('value').then(psnap => {
+            const players = psnap.val() || {};
+            const playerIds = Object.keys(players);
+            const validVoters = voterIds.filter(v => playerIds.includes(v));
+            if (validVoters.length >= 2) {
+              // decidir por mayoría
+              const modeCount = Object.values(votes).reduce((acc,m) => {
+                acc[m] = (acc[m]||0) + 1; return acc;
+              }, {});
+              const chosen = (modeCount['mode2'] > modeCount['mode1']) ? 'mode2' : 'mode1';
+              // Iniciar juego localmente para todos los clientes que ven estas señales
+              startGame(chosen);
+            }
+          });
         }
       }
     });
 
-    // Listen timer for mode2
-    if (mode === 'mode2') {
-      db.ref('timer').on('value', (snap) => {
-        const t = snap.val();
-        if (!t) return;
-        const now = Date.now();
-        const end = t.start + (t.duration * 1000);
-        const remaining = Math.max(0, Math.ceil((end - now) / 1000));
-        timerDiv.classList.remove('hidden');
-        timerDiv.textContent = `Tiempo restante: ${remaining}s`;
-        if (remaining <= 0) {
-          finishMode2Round();
-        }
-      });
+    function renderVotesUI() {
+      const entries = Object.entries(votes).map(([pid, m]) => `${pid.slice(-6)} → ${m}`);
+      votesStatus.textContent = entries.length ? entries.join(' | ') : 'Esperando votos...';
     }
 
-    // Listen signals (logs)
-    db.ref('signals').on('child_added', snap => {
-      const d = snap.val();
-      if (!d) return;
-      const el = document.createElement('div');
-      el.textContent = `[${new Date(d.time).toLocaleTimeString()}] ${d.from || 'anon'} -> ${d.signal}`;
-      signalsDiv.prepend(el);
-    });
+    // startGame (aquí empieza la lógica del juego; por ahora placeholder)
+    function startGame(chosenMode) {
+      if (gameStarted) return;
+      gameStarted = true;
+      voteArea.style.display = 'none';
+      gameArea.style.display = 'block';
+      gameMsg.textContent = 'Juego iniciado — modo: ' + chosenMode;
+      statusDiv.textContent = 'Juego en marcha';
+      // DESDE AQUÍ: arranca tu lógica real de juego (canvas, moves, etc.)
+      // Ejemplo: podrías redirigir a game.html o mostrar/crear un canvas y conectar listeners de /moves.
+      console.log('START GAME:', chosenMode);
 
-    // Listen scores (mode2)
-    db.ref('scores').on('value', snap => {
-      const s = snap.val() || {};
-      let text = 'Scores: ';
-      for (const pid in s) text += `${pid.slice(-4)}:${s[pid]} `;
-      scoresDiv.textContent = text;
-      scoresDiv2.textContent = text;
-    });
-  }
-
-  /********** EJECUCION ANIMADA DE INSTRUCCIONES **********/
-  // Execute seq array for player pid with a small animation delay
-  async function executeInstructionsAnimated(pid, seq, pushId) {
-    if (!playersState[pid]) {
-      // init default pos if missing
-      playersState[pid] = {
-        x: 0, y: 0, dir: 'right', score: 0
-      };
+      // (opcional) bloquear join al empezar
+      joinBtn.disabled = true;
     }
 
-    // mark as executed immediately to avoid double processing
-    await db.ref(`moves/${pid}/${pushId}/executed`).set(true);
-
-    for (let i = 0; i < seq.length; i++) {
-      const instr = seq[i];
-      applyInstruction(playersState[pid], instr);
-
-      // check bounds
-      playersState[pid].x = Math.max(0, Math.min(GRID_SIZE - 1, playersState[pid].x));
-      playersState[pid].y = Math.max(0, Math.min(GRID_SIZE - 1, playersState[pid].y));
-
-      renderAll();
-
-      // check for reaching goal:
-      if (checkGoal(playersState[pid], pid)) {
-        // increment score
-        await db.ref(`scores/${pid}`).transaction(current => (current || 0) + 1);
-        // reset player to start for next level
-        resetPlayerPosition(pid);
-        renderAll();
-      }
-
-      // small delay between instructions (animate)
-      await wait(ANIM_DELAY);
-    }
-  }
-
-  function wait(ms) { return new Promise(res => setTimeout(res, ms)); }
-
-  function applyInstruction(p, instr) {
-    if (instr === 'A') {
-      if (p.dir === 'up') p.y -= 1;
-      else if (p.dir === 'down') p.y += 1;
-      else if (p.dir === 'left') p.x -= 1;
-      else if (p.dir === 'right') p.x += 1;
-    } else if (instr === 'L') {
-      const map = { up:'left', left:'down', down:'right', right:'up' };
-      p.dir = map[p.dir];
-    } else if (instr === 'R') {
-      const map = { up:'right', right:'down', down:'left', left:'up' };
-      p.dir = map[p.dir];
-    }
-  }
-
-  function checkGoal(p, pid) {
-    // goal depends on player's starting index:
-    // player who started at (0,0) aims (GRID_SIZE-1, GRID_SIZE-1)
-    // player who started at (n-1,n-1) aims (0,0)
-    const startIsTopLeft = checkIfStartTopLeft(pid);
-    if (startIsTopLeft) return p.x === GRID_SIZE - 1 && p.y === GRID_SIZE - 1;
-    return p.x === 0 && p.y === 0;
-  }
-
-  function checkIfStartTopLeft(pid) {
-    // check players ordering in DB to determine who is top-left
-    // read players snapshot
-    // If pid is first key -> top-left
-    // (Assumes player order stable)
-    // Synchronous check via previously loaded playersState keys:
-    const keys = Object.keys(playersState);
-    return keys.indexOf(pid) === 0;
-  }
-
-  function resetPlayerPosition(pid) {
-    const keys = Object.keys(playersState);
-    const idx = keys.indexOf(pid);
-    if (idx === 0) {
-      playersState[pid].x = 0; playersState[pid].y = 0; playersState[pid].dir = 'right';
-    } else {
-      playersState[pid].x = GRID_SIZE - 1; playersState[pid].y = GRID_SIZE - 1; playersState[pid].dir = 'left';
-    }
-  }
-
-  /********** RENDERING **********/
-  function renderAll() {
-    // mode1: draw both players on canvas (single)
-    // mode2: draw player 0 on canvas, player1 on canvas2
-    if (!currentMode) return;
-    if (currentMode === 'mode1') {
-      renderBoard(ctx, playersState);
-      colCanvas2.classList.add('hidden');
-    } else {
-      // mode2: split boards. Determine players by key order
-      const pkeys = Object.keys(playersState);
-      const left = pkeys[0] ? { [pkeys[0]]: playersState[pkeys[0]] } : {};
-      const right = pkeys[1] ? { [pkeys[1]]: playersState[pkeys[1]] } : {};
-      renderBoard(ctx, left);
-      renderBoard(ctx2, right);
-      colCanvas2.classList.remove('hidden');
-    }
-  }
-
-  function renderBoard(context, ps) {
-    // clear
-    context.clearRect(0,0, GRID_SIZE*CELL_PX, GRID_SIZE*CELL_PX);
-    context.strokeStyle = '#999';
-    context.lineWidth = 1;
-    context.font = '18px Arial';
-
-    // grid
-    for (let i=0;i<GRID_SIZE;i++){
-      for (let j=0;j<GRID_SIZE;j++){
-        context.strokeRect(i*CELL_PX, j*CELL_PX, CELL_PX, CELL_PX);
-      }
-    }
-
-    // draw goal squares (for top-left start goal is bottom-right; for other the opposite)
-    // we will draw both corners green so spectators can see both
-    context.fillStyle = '#c8f7c5';
-    context.fillRect((GRID_SIZE-1)*CELL_PX, (GRID_SIZE-1)*CELL_PX, CELL_PX, CELL_PX);
-    context.fillRect(0,0, CELL_PX, CELL_PX);
-
-    // draw players
-    let idx = 0;
-    for (const pid in ps) {
-      const p = ps[pid];
-      context.fillStyle = idx === 0 ? '#3478f6' : '#e67300';
-      context.fillRect(p.x*CELL_PX+4, p.y*CELL_PX+4, CELL_PX-8, CELL_PX-8);
-      // direction marker
-      context.fillStyle = '#fff';
-      const arrow = p.dir[0].toUpperCase();
-      context.fillText(arrow, p.x*CELL_PX + CELL_PX/2 - 6, p.y*CELL_PX + CELL_PX/2 + 6);
-      idx++;
-    }
-  }
-
-  /********** CONTROL DE INSTRUCCIONES (UI -> DB) **********/
-  function addInstruction(c) {
-    if (!playerId) { alert('Primero únete'); return; }
-    const valid = ['A','L','R'];
-    if (!valid.includes(c)) return;
-    instructions.push(c);
-    instructionsList.textContent = instructions.join(' ');
-  }
-
-  async function sendInstructions() {
-    if (!playerId) return;
-    if (instructions.length === 0) return;
-    // store under /moves/{playerId}/{pushId}
-    await db.ref(`moves/${playerId}`).push({
-      seq: instructions.slice(),
-      time: Date.now()
-    });
-    // also log as signal
-    await db.ref('signals').push({ signal: instructions.join(''), from: playerId, time: Date.now() });
-    instructions = [];
-    instructionsList.textContent = '';
-  }
-
-  /********** MODO2: FINISH ROUND (COMPARAR SCORES) **********/
-  async function finishMode2Round() {
-    // get scores
-    const snap = await db.ref('scores').once('value');
-    const s = snap.val() || {};
-    // determine winner (highest score)
-    let best = null, bestVal = -1;
-    for (const pid in s) {
-      if ((s[pid] || 0) > bestVal) { bestVal = s[pid]; best = pid; }
-    }
-    if (best) {
-      await db.ref('result').set({ winner: best, score: bestVal, at: Date.now() });
-      resultDiv.textContent = `Ronda terminada. Ganador: ${best} (puntos: ${bestVal})`;
-    } else {
-      resultDiv.textContent = 'Ronda terminada. Sin puntuaciones.';
-    }
-    // reset timer for next round (optional): remove timer so admin can restart
-    // db.ref('timer').remove();
-  }
-
-  /********** UTILS **********/
-  function log(msg) {
-    console.log(msg);
-  }
-
-  /********** Inicialización: observar estado y ofrecer UI de votacion si procede **********/
-  // Show vote area only if there is at least one player in lobby
-  db.ref('players').on('value', (snap) => {
-    const players = snap.val() || {};
-    const n = Object.keys(players).length;
-    // show vote area only if at least one player exists and mode not decided yet
-    db.ref('mode').once('value').then(msnap => {
-      if (!msnap.exists() && n > 0) {
-        voteArea.classList.remove('hidden');
-      } else {
-        voteArea.classList.add('hidden');
-      }
-    });
-  });
-
-  // show mode/result to everyone when result set
-  db.ref('result').on('value', (snap) => {
-    const r = snap.val();
-    if (r) {
-      resultDiv.textContent = `Ganador de la última ronda: ${r.winner} (puntos: ${r.score})`;
-    }
-  });
-
-  // initial UI update
-  updateLobbyUI();
-
-  // Clean up database helpers for development:
-  // If you want to reset the game (clear votes/mode/moves/scores) use:
-  // db.ref().update({ votes: null, mode: null, moves: null, scores: null, timer: null, result: null });
-
-  /********** Nota final **********/
-  // - Este ejemplo es funcional pero minimal. Para producción: gestionar seguridad rules de Firebase (solo permitir writes permitidos),
-  //   manejar casos de reconexión (re-join automático si quieres), y añadir locks para evitar race conditions.
-  // - Si quieres, separo en archivos /js y css, y te doy instrucciones de rutas para Github Pages.
-        }
-      }
-    });
-
+    // Mostrar señales históricas al cargar (child_added hará esto)
+    // update inicial del estado
     updateStatus();
+
+    // Nota: no tocamos reglas de DB; el hecho de usar /signals para votos respeta
+    // tu regla actual que sólo permite escribir /signals si `from` existe en /players.
+
   </script>
 </body>
 </html>
