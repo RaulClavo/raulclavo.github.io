@@ -64,7 +64,6 @@ firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 
 let playerId = null;
-let playerRef = null;
 let gameStarted = false;
 let gameMode = null;
 const votes = {};
@@ -113,10 +112,7 @@ joinBtn.onclick = async () => {
         return;
     }
     playerId = Date.now().toString();
-    playerRef = db.ref('players/'+playerId);
-    await playerRef.set({joinedAt: Date.now()});
-    playerRef.onDisconnect().remove();
-    joinBtn.disabled = true;
+    await db.ref('players/'+playerId).set({joinedAt: Date.now()});
     controllerArea.style.display="block";
     updateStatus();
 };
@@ -133,27 +129,9 @@ function executeQueue(){
     const queue = [...playerQueues[playerId]];
     playerQueues[playerId]=[];
     queueDisplay.textContent="Ruta: []";
-    processQueue(playerId, queue);
     queue.forEach(sig=>{
         db.ref('signals').push({signal:sig, from:playerId, time:Date.now()});
     });
-}
-
-function processQueue(pid, queue){
-    let i=0;
-    const interval = setInterval(()=>{
-        if(i>=queue.length){ clearInterval(interval); return; }
-        const sig=queue[i]; i++;
-        const p=playerPositions[pid];
-        if(sig==="FORWARD"){
-            if(p.orientation===0 && p.y>0) p.y--;
-            else if(p.orientation===1 && p.x<boardSize-1) p.x++;
-            else if(p.orientation===2 && p.y<boardSize-1) p.y++;
-            else if(p.orientation===3 && p.x>0) p.x--;
-        } else if(sig==="TURN_LEFT") p.orientation=(p.orientation+3)%4;
-        else if(sig==="TURN_RIGHT") p.orientation=(p.orientation+1)%4;
-        renderBoard();
-    }, 500);
 }
 
 function castVote(mode){
@@ -164,6 +142,7 @@ function castVote(mode){
 db.ref('signals').on('child_added', snap=>{
     const data = snap.val();
     if(!data) return;
+    
     if(data.signal.startsWith("VOTE:")){
         votes[data.from] = data.signal.split(":")[1];
         votesStatus.textContent = Object.entries(votes).map(([pid,m])=>pid.slice(-4)+"→"+m).join(" | ");
@@ -171,9 +150,13 @@ db.ref('signals').on('child_added', snap=>{
             const counts = Object.values(votes).reduce((acc,m)=>{
                 acc[m]=(acc[m]||0)+1; return acc;
             },{});
-            gameMode = counts["mode2"]>counts["mode1"] ? "mode2" : counts["mode1"]>counts["mode2"] ? "mode1" : Math.random()<0.5?"mode1":"mode2";
-            startGame(gameMode);
+            const selectedMode = counts["mode2"]>counts["mode1"] ? "mode2" : counts["mode1"]>counts["mode2"] ? "mode1" : Math.random()<0.5?"mode1":"mode2";
+            db.ref('signals').push({signal:"START:"+selectedMode, from:"system", time:Date.now()});
         }
+    } else if(data.signal.startsWith("START:")){
+        startGame(data.signal.split(":")[1]);
+    } else if(gameStarted){
+        processSignal(data);
     }
 });
 
@@ -186,13 +169,13 @@ function startGame(mode){
     controllerArea.style.display=playerId?"block":"none";
     spectatorArea.style.display="block";
     statusDiv.textContent="Juego iniciado ("+mode+")";
+
     db.ref('players').once('value').then(psnap=>{
         const players = psnap.val()||{};
         const ids = Object.keys(players);
         playerPositions={};
         ids.forEach((pid,i)=>{
             playerPositions[pid]={x:0,y:boardSize-1,symbol:i===0?"▲":"●",orientation:0};
-            playerQueues[pid]=[];
         });
         renderBoard();
     });
@@ -204,9 +187,26 @@ function cancelGame(){
     controllerArea.style.display="none";
     spectatorArea.style.display="none";
     playerPositions={};
-    playerQueues={};
     gameMode=null;
     statusDiv.textContent="Partida cancelada. Vuelve al lobby.";
+}
+
+function processSignal(data){
+    const pid = data.from;
+    if(!playerPositions[pid]) return;
+
+    const sig = data.signal;
+    const p = playerPositions[pid];
+
+    if(sig==="FORWARD"){
+        if(p.orientation===0 && p.y>0) p.y--;
+        else if(p.orientation===1 && p.x<boardSize-1) p.x++;
+        else if(p.orientation===2 && p.y<boardSize-1) p.y++;
+        else if(p.orientation===3 && p.x>0) p.x--;
+    } else if(sig==="TURN_LEFT") p.orientation=(p.orientation+3)%4;
+    else if(sig==="TURN_RIGHT") p.orientation=(p.orientation+1)%4;
+
+    renderBoard();
 }
 
 function renderBoard(){
