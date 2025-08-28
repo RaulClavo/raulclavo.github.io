@@ -270,6 +270,48 @@ function renderBoard(){
 }
 
 updateStatus();
+
+// --- Sincronizar modo de juego para espectadores ---
+db.ref('signals').orderByChild('signal').equalTo('START:mode1').on('value', snap => {
+    const val = snap.val();
+    if(val && !gameStarted) {
+        gameMode = "mode1";
+        gameStarted = true;
+        voteArea.style.display = "none";
+        controllerArea.style.display = playerId ? "block" : "none";
+        spectatorArea.style.display = "block";
+        statusDiv.textContent = "Juego iniciado (mode1)";
+        db.ref('players').once('value').then(psnap => {
+            const players = psnap.val()||{};
+            const ids = Object.keys(players);
+            playerPositions={};
+            ids.forEach((pid,i)=>{
+                playerPositions[pid]={x:0,y:boardSize-1,symbol:i===0?"▲":"●",orientation:0};
+            });
+            renderBoard();
+        });
+    }
+});
+db.ref('signals').orderByChild('signal').equalTo('START:mode2').on('value', snap => {
+    const val = snap.val();
+    if(val && !gameStarted) {
+        gameMode = "mode2";
+        gameStarted = true;
+        voteArea.style.display = "none";
+        controllerArea.style.display = playerId ? "block" : "none";
+        spectatorArea.style.display = "block";
+        statusDiv.textContent = "Juego iniciado (mode2)";
+        db.ref('players').once('value').then(psnap => {
+            const players = psnap.val()||{};
+            const ids = Object.keys(players);
+            playerPositions={};
+            ids.forEach((pid,i)=>{
+                playerPositions[pid]={x:0,y:boardSize-1,symbol:i===0?"▲":"●",orientation:0};
+            });
+            renderBoard();
+        });
+    }
+});
 </script>
 </body>
 </html>
