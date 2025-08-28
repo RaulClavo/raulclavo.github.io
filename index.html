@@ -1,247 +1,165 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <meta charset="UTF-8" />
-  <title>Juego en Vivo — Con modos y ejecución de instrucciones</title>
+  <meta charset="UTF-8">
+  <title>Juego en Vivo</title>
   <style>
-    body { font-family: Arial; text-align: center; margin: 20px; }
-    button { margin: 5px; padding: 8px 14px; font-size: 16px; }
-    #status { margin: 12px 0; font-size: 18px; font-weight: bold; }
-    #lobby, #game, #voteArea { margin: 12px auto; max-width: 900px; }
-    #gameCanvas, #gameCanvas2 { border: 1px solid #333; background: #fafafa; }
-    .row { display:flex; justify-content:center; gap:20px; align-items:flex-start; }
-    .col { display:flex; flex-direction:column; align-items:center; }
-    #controls { margin-top: 10px; }
-    #instructionsList { min-height: 24px; margin-top:6px; }
-    #scores { margin-top: 8px; font-weight: bold; }
-    #timer { font-size: 20px; margin-top: 6px; }
-    .hidden { display:none; }
+    body { font-family: Arial; text-align: center; margin-top: 50px; }
+    button { margin: 5px; padding: 10px 20px; font-size: 18px; }
+    #signals { margin-top: 20px; font-size: 24px; }
+    #status { margin: 20px; font-size: 20px; font-weight: bold; }
+    #voteArea { margin: 20px; }
   </style>
 </head>
 <body>
   <h1>Juego en Vivo</h1>
-
+  
   <div id="status">Comprobando estado...</div>
 
-  <div id="lobby">
-    <button id="joinBtn">Unirse</button>
-    <button id="leaveBtn" class="hidden">Salir</button>
+  <button id="joinBtn">Unirse</button>
 
-    <div id="playersInfo"></div>
-
-    <div id="voteArea" class="hidden">
-      <h3>Vota el modo de juego</h3>
-      <div>
-        <button id="voteMode1">Modo 1 — Una pantalla (espectador ve ambos)</button>
-        <button id="voteMode2">Modo 2 — Dos pantallas (compiten por niveles)</button>
-      </div>
-      <div id="votesStatus"></div>
-    </div>
+  <div id="controls" style="display:none;">
+    <h2>Tus señales</h2>
+    <button onclick="sendSignal('A')">A</button>
+    <button onclick="sendSignal('B')">B</button>
+    <button onclick="sendSignal('C')">C</button>
+    <button onclick="sendSignal('D')">D</button>
+    <button onclick="sendSignal('E')">E</button>
   </div>
 
-  <div id="game" class="hidden">
-    <div id="modeInfo"></div>
-    <div id="timer" class="hidden"></div>
-
-    <div class="row" id="gameArea">
-      <!-- Canvas(s) -->
-      <div class="col">
-        <canvas id="gameCanvas" width="400" height="400"></canvas>
-        <div id="scores">Scores: —</div>
-      </div>
-
-      <!-- Second canvas only visible in mode2 (or spectators can see both) -->
-      <div class="col hidden" id="colCanvas2">
-        <canvas id="gameCanvas2" width="400" height="400"></canvas>
-        <div id="scores2">Scores2: —</div>
-      </div>
-    </div>
-
-    <!-- Controls for players only -->
-    <div id="controls" class="hidden">
-      <h3>Tus instrucciones</h3>
-      <div>
-        <button onclick="addInstruction('A')">Avanzar (A)</button>
-        <button onclick="addInstruction('L')">Girar Izq (L)</button>
-        <button onclick="addInstruction('R')">Girar Der (R)</button>
-        <button onclick="sendInstructions()">Enviar instrucciones</button>
-      </div>
-      <div id="instructionsList"></div>
-    </div>
-
-    <h3>Señales (logs)</h3>
-    <div id="signals"></div>
-    <div id="result" style="font-size:18px;margin-top:10px;"></div>
+  <!-- Votación -->
+  <div id="voteArea" style="display:none;">
+    <h2>Votación de modo</h2>
+    <button onclick="castVote('mode1')">Modo 1</button>
+    <button onclick="castVote('mode2')">Modo 2</button>
+    <div id="votesStatus">Esperando votos...</div>
   </div>
+
+  <h2>Señales enviadas</h2>
+  <div id="signals"></div>
 
   <!-- Firebase v8 -->
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
 
   <script>
-  /********** CONFIG FIREBASE **********/
-  const firebaseConfig = {
-    apiKey: "AIzaSyDGYEYs5YFZqMpcU0rJSeLxdzCt1iaumis",
-    authDomain: "welcomedayarise.firebaseapp.com",
-    databaseURL: "https://welcomedayarise-default-rtdb.europe-west1.firebasedatabase.app",
-    projectId: "welcomedayarise",
-    storageBucket: "welcomedayarise.firebasestorage.app",
-    messagingSenderId: "417894091538",
-    appId: "1:417894091538:web:a2eab16a056dfc902881cb",
-    measurementId: "G-8ZXHLVM20C"
-  };
-  firebase.initializeApp(firebaseConfig);
-  const db = firebase.database();
+    const firebaseConfig = {
+      apiKey: "AIzaSyDGYEYs5YFZqMpcU0rJSeLxdzCt1iaumis",
+      authDomain: "welcomedayarise.firebaseapp.com",
+      databaseURL: "https://welcomedayarise-default-rtdb.europe-west1.firebasedatabase.app",
+      projectId: "welcomedayarise",
+      storageBucket: "welcomedayarise.firebasestorage.app",
+      messagingSenderId: "417894091538",
+      appId: "1:417894091538:web:a2eab16a056dfc902881cb",
+      measurementId: "G-8ZXHLVM20C"
+    };
 
-  /********** ESTADO LOCAL **********/
-  let playerId = null;          // id temporal por timestamp
-  let role = null;              // "player" o "spectator"
-  let myPlayerIndex = null;     // 0 o 1 si eres jugador (determina inicio)
-  let instructions = [];        // acumulador local de instrucciones
-  const JOIN_LIMIT = 2;
-  const GRID_SIZE = 8;
-  const CELL_PX = 50;
-  const ANIM_DELAY = 300; // ms por instrucción
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
 
-  /********** DOM **********/
-  const joinBtn = document.getElementById('joinBtn');
-  const leaveBtn = document.getElementById('leaveBtn');
-  const statusDiv = document.getElementById('status');
-  const playersInfo = document.getElementById('playersInfo');
+    let playerId = null;
+    const joinBtn = document.getElementById("joinBtn");
+    const statusDiv = document.getElementById("status");
+    const voteArea = document.getElementById("voteArea");
 
-  const voteArea = document.getElementById('voteArea');
-  const voteMode1Btn = document.getElementById('voteMode1');
-  const voteMode2Btn = document.getElementById('voteMode2');
-  const votesStatus = document.getElementById('votesStatus');
+    // Función para actualizar el estado
+    async function updateStatus() {
+      const snapshot = await db.ref("players").once("value");
+      const players = snapshot.val() || {};
+      const numPlayers = Object.keys(players).length;
 
-  const gameDiv = document.getElementById('game');
-  const modeInfo = document.getElementById('modeInfo');
-  const timerDiv = document.getElementById('timer');
-  const controlsDiv = document.getElementById('controls');
-  const instructionsList = document.getElementById('instructionsList');
-  const signalsDiv = document.getElementById('signals');
-  const resultDiv = document.getElementById('result');
-
-  const canvas = document.getElementById('gameCanvas');
-  const ctx = canvas.getContext('2d');
-  const canvas2 = document.getElementById('gameCanvas2');
-  const ctx2 = canvas2.getContext('2d');
-  const colCanvas2 = document.getElementById('colCanvas2');
-  const scoresDiv = document.getElementById('scores');
-  const scoresDiv2 = document.getElementById('scores2');
-
-  /********** LOBBY / JOIN / LEAVE **********/
-  async function updateLobbyUI() {
-    const snap = await db.ref('players').once('value');
-    const players = snap.val() || {};
-    const ids = Object.keys(players);
-    playersInfo.innerHTML = `Jugadores actuales: ${ids.length} / ${JOIN_LIMIT} <br> ${ids.join(', ') || '—'}`;
-
-    // si ya hay 2 y no somos jugador -> espectador
-    if (!playerId) {
-      role = (ids.length >= JOIN_LIMIT) ? 'spectator' : 'notjoined';
-    } else {
-      role = 'player';
+      if (playerId) {
+        statusDiv.textContent = "Estás jugando";
+        // Mostrar votación si hay 2 jugadores
+        if (numPlayers === 2) voteArea.style.display = "block";
+      } else if (numPlayers < 2) {
+        statusDiv.textContent = `Huecos libres: ${2 - numPlayers}`;
+        voteArea.style.display = "none";
+      } else {
+        statusDiv.textContent = "Eres espectador";
+        voteArea.style.display = "none";
+      }
     }
 
-    statusDiv.textContent = (role === 'player') ? 'Estás jugando' : (role === 'spectator' ? 'Eres espectador' : 'Aún no te has unido');
-    // show vote area if at least one player joined and we are player or spectator (we'll only accept votes from players later)
-    voteArea.classList.toggle('hidden', ids.length === 0);
-  }
+    db.ref("players").on("value", updateStatus);
 
-  db.ref('players').on('value', updateLobbyUI);
+    // Botón Unirse
+    joinBtn.onclick = async () => {
+      const snapshot = await db.ref("players").once("value");
+      const players = snapshot.val() || {};
+      
+      if (playerId) return;
 
-  joinBtn.onclick = async () => {
-    const snap = await db.ref('players').once('value');
-    const players = snap.val() || {};
-    if (playerId) return; // ya unido en esta pestaña
+      if (Object.keys(players).length < 2) {
+        playerId = Date.now().toString();
+        const playerRef = db.ref("players/" + playerId);
+        await playerRef.set(true);
 
-    if (Object.keys(players).length < JOIN_LIMIT) {
-      playerId = Date.now().toString();
-      const playerRef = db.ref('players/' + playerId);
-      await playerRef.set({ joinedAt: Date.now() });
+        // Configurar eliminación automática al cerrar la pestaña
+        window.addEventListener("beforeunload", async () => {
+          await playerRef.remove();
+        });
 
-      // onDisconnect para eliminar al cerrar pestaña o perder conexion
-      playerRef.onDisconnect().remove();
+        document.getElementById("controls").style.display = "block";
+        joinBtn.disabled = true;
+        updateStatus();
+      } else {
+        alert("Ya hay 2 jugadores, eres espectador.");
+        updateStatus();
+      }
+    };
 
-      // asignar índice (0..n-1) según orden actual
-      const snapshot = await db.ref('players').once('value');
-      const ids = Object.keys(snapshot.val() || {});
-      myPlayerIndex = ids.indexOf(playerId); // 0 o 1
-      role = 'player';
+    // Enviar señal
+    function sendSignal(signal) {
+      const validSignals = ['A', 'B', 'C', 'D', 'E'];
+      if (!validSignals.includes(signal)) return;
 
-      joinBtn.disabled = true;
-      leaveBtn.classList.remove('hidden');
-      controlsDiv.classList.remove('hidden');
-      updateLobbyUI();
-
-      // si somos el segundo jugador podemos habilitar la votacion (o ya existe)
-      checkStartVoting();
-    } else {
-      alert('Ya hay 2 jugadores. Eres espectador.');
-      updateLobbyUI();
-    }
-  };
-
-  leaveBtn.onclick = async () => {
-    if (!playerId) return;
-    await db.ref('players/' + playerId).remove();
-    playerId = null;
-    myPlayerIndex = null;
-    role = null;
-    joinBtn.disabled = false;
-    leaveBtn.classList.add('hidden');
-    controlsDiv.classList.add('hidden');
-    instructions = [];
-    instructionsList.textContent = '';
-    updateLobbyUI();
-  };
-
-  /********** VOTACION DE MODO **********/
-  function checkStartVoting() {
-    // si hay al menos 1 jugador presente mostramos status de votos
-    db.ref('votes').on('value', (snap) => {
-      const votes = snap.val() || {};
-      const keys = Object.keys(votes);
-      votesStatus.textContent = `Votos: ${keys.length} -> ${JSON.stringify(votes)}`;
-      // cuando ambos jugadores hayan votado, se decide modo
-      db.ref('players').once('value').then(psnap => {
-        const players = psnap.val() || {};
-        if (Object.keys(players).length === JOIN_LIMIT && keys.length >= JOIN_LIMIT) {
-          decideMode(votes);
-        }
+      db.ref("signals").push({
+        signal,
+        from: playerId,
+        time: Date.now()
       });
-    });
-  }
-
-  voteMode1Btn.onclick = () => castVote('mode1');
-  voteMode2Btn.onclick = () => castVote('mode2');
-
-  async function castVote(mode) {
-    if (!playerId) { alert('Debes unirte para votar'); return; }
-    await db.ref('votes/' + playerId).set(mode);
-  }
-
-  // Decide mode by majority; tie -> mode1 default
-  async function decideMode(votesObj) {
-    const votes = Object.values(votesObj || {});
-    const countMode1 = votes.filter(v => v === 'mode1').length;
-    const countMode2 = votes.filter(v => v === 'mode2').length;
-    const chosen = (countMode2 > countMode1) ? 'mode2' : 'mode1';
-    // write chosen mode to db if not set
-    const modeSnap = await db.ref('mode').once('value');
-    if (!modeSnap.exists()) {
-      await db.ref('mode').set({ chosen, at: Date.now() });
     }
-  }
 
-  // Watch for mode set and then start game
-  db.ref('mode').on('value', (snap) => {
-    const m = snap.val();
-    if (m && m.chosen) {
-      startGame(m.chosen);
+    // Votar usando señales
+    function castVote(mode) {
+      if (!playerId) { 
+        alert("Debes unirte para votar"); 
+        return; 
+      }
+      db.ref("signals").push({
+        signal: "VOTE:" + mode,
+        from: playerId,
+        time: Date.now()
+      });
     }
-  });
+
+    // Escuchar señales y votos
+    let votes = {};
+
+    db.ref("signals").on("child_added", (snap) => {
+      const data = snap.val();
+      if (!data || !data.signal) return;
+
+      const div = document.getElementById("signals");
+      div.innerHTML = `<div>${data.signal}</div>` + div.innerHTML;
+
+      // Filtrar votos
+      if (data.signal.startsWith("VOTE:")) {
+        const mode = data.signal.split(":")[1];
+        votes[data.from] = mode;
+
+        // Mostrar votos
+        document.getElementById("votesStatus").textContent = 
+          Object.entries(votes).map(([pid, m]) => `${pid.slice(-4)} → ${m}`).join(" | ");
+
+        // Si ya votaron 2
+        if (Object.keys(votes).length >= 2) {
+          const countMode1 = Object.values(votes).filter(v => v === "mode1").length;
+          const countMode2 = Object.values(votes).filter(v => v === "mode2").length;
+          const chosen = countMode2 > countMode1 ? "mode2" : "mode1";
+          alert("El juego empieza en: " + chosen);
+          // Aquí iría startGame(chosen);
 
   /********** GAME LÓGICA **********/
   // DB structure:
@@ -573,6 +491,11 @@
   // - Este ejemplo es funcional pero minimal. Para producción: gestionar seguridad rules de Firebase (solo permitir writes permitidos),
   //   manejar casos de reconexión (re-join automático si quieres), y añadir locks para evitar race conditions.
   // - Si quieres, separo en archivos /js y css, y te doy instrucciones de rutas para Github Pages.
+        }
+      }
+    });
+
+    updateStatus();
   </script>
 </body>
 </html>
