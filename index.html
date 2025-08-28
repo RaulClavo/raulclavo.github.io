@@ -326,9 +326,7 @@ window.addEventListener("beforeunload", async function(e) {
 db.ref('signals').on('child_added', snap => {
     const data = snap.val();
     if (data && data.signal === "CANCEL_GAME") {
-        // Borra jugadores en todos los clientes
-        db.ref("players").remove();
-        // Borra todas las señales individualmente
+        // Borra todas las señales individualmente primero
         db.ref("signals").once("value").then(snap => {
             const signals = snap.val() || {};
             Object.entries(signals).forEach(([key, val]) => {
@@ -337,10 +335,12 @@ db.ref('signals').on('child_added', snap => {
                     db.ref("signals/" + key).remove();
                 }
             });
+            // Después borra los jugadores
+            db.ref("players").remove();
+            // Cancela la partida localmente
+            cancelGame();
+            updateStatus();
         });
-        // Cancela la partida localmente
-        cancelGame();
-        updateStatus();
     }
 });
 </script>
