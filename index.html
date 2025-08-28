@@ -10,7 +10,7 @@
   #voteArea, #controllerArea, #spectatorArea { display:none; margin-top:20px; }
   #votesStatus { margin-top: 8px; font-style: italic; }
   #playersInfo { margin-top: 8px; }
-  #board, .board2 { display: grid; grid-template-columns: repeat(5, 60px); grid-gap: 4px; justify-content: center; margin-top:20px; }
+  .board { display: grid; grid-template-columns: repeat(5, 60px); grid-gap: 4px; justify-content: center; margin-top:20px; }
   .cell { width: 60px; height: 60px; border: 1px solid #aaa; display:flex; align-items:center; justify-content:center; font-weight:bold; }
   .goal { background: lightgreen; }
   #mode2Container { display:flex; justify-content: space-around; margin-top:20px; }
@@ -127,7 +127,7 @@ joinBtn.onclick = async () => {
 
 leaveBtn.onclick = async () => {
   if(!playerId) return;
-  await db.ref().set(null); // borra toda la base de datos al salir
+  await db.ref().remove(); // borra toda la base de datos al salir
   playerId=null; playerRef=null;
   cancelGame();
   joinBtn.disabled=false;
@@ -162,10 +162,16 @@ function processQueue(pid, queue){
     if(sig==="FORWARD"){
       if(p.orientation===0 && p.y>0) p.y--;
       else if(p.orientation===1 && p.x<boardSize-1) p.x++;
-      else if(p.orientation===2 && p.y<boardSize-1) p.y++;
-      else if(p.orientation===3 && p.x>0) p.x--;
+      else if(sig==="TURN_LEFT") p.orientation=(p.orientation+3)%4;
+      else if(sig==="TURN_RIGHT") p.orientation=(p.orientation+1)%4;
     } else if(sig==="TURN_LEFT"){ p.orientation=(p.orientation+3)%4; }
     else if(sig==="TURN_RIGHT"){ p.orientation=(p.orientation+1)%4; }
+    else if(sig==="FORWARD"){
+      if(p.orientation===0 && p.y>0) p.y--;
+      else if(p.orientation===1 && p.x<boardSize-1) p.x++;
+      else if(p.orientation===2 && p.y<boardSize-1) p.y++;
+      else if(p.orientation===3 && p.x>0) p.x--;
+    }
     renderBoard();
   }, 500);
 }
@@ -183,8 +189,6 @@ db.ref('signals').on('child_added', snap=>{
     votesStatus.textContent = Object.entries(votes).map(([pid,m])=>pid.slice(-4)+"→"+m).join(" | ");
     if(!gameStarted && Object.keys(votes).length>=2){
       const counts = Object.values(votes).reduce((acc,m)=>{ acc[m]=(acc[m]||0)+1; return acc;},{});
-      if(!counts["mode1"]) counts["mode1"]=0;
-      if(!counts["mode2"]) counts["mode2"]=0;
       gameMode = counts["mode2"]>counts["mode1"] ? "mode2" : counts["mode1"]>counts["mode2"] ? "mode1" : Math.random()<0.5?"mode1":"mode2";
       startGame(gameMode);
     }
@@ -226,6 +230,7 @@ function cancelGame(){
 function renderBoard(){
   boardDiv.innerHTML="";
   if(gameMode==="mode1" || !gameMode){
+    const b=document.createElement("div"); b.className="board";
     for(let i=0;i<boardSize;i++){
       for(let j=0;j<boardSize;j++){
         const cell=document.createElement("div"); cell.className="cell";
@@ -238,17 +243,21 @@ function renderBoard(){
             cell.appendChild(span);
           }
         }
-        boardDiv.appendChild(cell);
+        b.appendChild(cell);
       }
     }
+    boardDiv.appendChild(b);
   } else if(gameMode==="mode2"){
     const container=document.createElement("div");
-    container.id="mode2Container"; container.style.display="flex"; container.style.justifyContent="space-around";
-    for(const pid in playerPositions){
+    container.id="mode2Container";
+    container.style.display="flex"; container.style.justifyContent="space-around";
+
+    const pids=Object.keys(playerPositions);
+    pids.forEach(pid=>{
       const wrapper=document.createElement("div");
       const title=document.createElement("div"); title.textContent="Jugador "+pid.slice(-4);
       wrapper.appendChild(title);
-      const b=document.createElement("div"); b.className="board2"; b.style.display="grid"; b.style.gridTemplateColumns=`repeat(${boardSize},60px)`;
+      const b=document.createElement("div"); b.className="board";
       for(let i=0;i<boardSize;i++){
         for(let j=0;j<boardSize;j++){
           const cell=document.createElement("div"); cell.className="cell";
@@ -264,7 +273,8 @@ function renderBoard(){
       }
       wrapper.appendChild(b);
       container.appendChild(wrapper);
-    }
+    });
+
     boardDiv.appendChild(container);
   }
 }
