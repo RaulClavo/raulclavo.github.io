@@ -2,12 +2,13 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>Juego en Vivo (Modo 2)</title>
+<title>Juego en Vivo</title>
 <style>
 body { font-family: Arial; text-align: center; margin-top: 20px; }
 button { margin: 5px; padding: 10px 18px; font-size: 16px; }
 #status { margin: 14px 0; font-size: 18px; font-weight: bold; }
-#controllerArea, #spectatorArea { display:none; margin-top:20px; }
+#voteArea, #controllerArea, #spectatorArea { display:none; margin-top:20px; }
+#votesStatus { margin-top: 8px; font-style: italic; }
 #playersInfo { margin-top: 8px; }
 .board { display: grid; grid-template-columns: repeat(5, 60px); grid-gap: 4px; justify-content: center; margin-top:20px; }
 .cell { width: 60px; height: 60px; border: 1px solid #aaa; display:flex; align-items:center; justify-content:center; font-weight:bold; }
@@ -23,7 +24,15 @@ button { margin: 5px; padding: 10px 18px; font-size: 16px; }
 </div>
 <div id="playersInfo"></div>
 
-<!-- Área de mando (solo jugadores) -->
+<!-- Votación -->
+<div id="voteArea">
+    <h3>Votación del modo</h3>
+    <button onclick="castVote('mode1')">Modo 1 — Una pantalla</button>
+    <button onclick="castVote('mode2')">Modo 2 — Dos pantallas</button>
+    <div id="votesStatus">Esperando votos...</div>
+</div>
+
+<!-- Área de mando (jugadores) -->
 <div id="controllerArea">
     <h2>Mando del Jugador</h2>
     <button onclick="addSignal('FORWARD')">Avanzar</button>
@@ -56,6 +65,8 @@ const db = firebase.database();
 
 let playerId = null;
 let gameStarted = false;
+let gameMode = null;
+const votes = {};
 const playerQueues = {};
 const boardSize = 5;
 let playerPositions = {};
@@ -63,6 +74,8 @@ let playerPositions = {};
 const joinBtn = document.getElementById("joinBtn");
 const statusDiv = document.getElementById("status");
 const playersInfo = document.getElementById("playersInfo");
+const voteArea = document.getElementById("voteArea");
+const votesStatus = document.getElementById("votesStatus");
 const controllerArea = document.getElementById("controllerArea");
 const spectatorArea = document.getElementById("spectatorArea");
 const queueDisplay = document.getElementById("queueDisplay");
@@ -78,6 +91,8 @@ async function updateStatus() {
     if(playerId && !gameStarted) statusDiv.textContent = "Estás jugando";
     else if(!playerId && ids.length<2) statusDiv.textContent = `Huecos libres: ${2-ids.length}`;
     else if(!playerId && ids.length>=2) statusDiv.textContent = "Eres espectador";
+
+    voteArea.style.display = (playerId && ids.length===2 && !gameStarted) ? "block" : "none";
 }
 
 db.ref("players").on("value", snapshot => {
@@ -90,22 +105,16 @@ joinBtn.onclick = async () => {
     const snap = await db.ref("players").once("value");
     const players = snap.val()||{};
     if(playerId || Object.keys(players).length>=2){
-        // espectador
+        alert("Ya hay 2 jugadores, eres espectador");
         playerId=null;
         controllerArea.style.display="none";
         spectatorArea.style.display="block";
         return;
     }
-    // jugador
     playerId = Date.now().toString();
     await db.ref('players/'+playerId).set({joinedAt: Date.now()});
     controllerArea.style.display="block";
-    spectatorArea.style.display="none"; 
     updateStatus();
-
-    if(Object.keys(players).length===1){ // arrancar juego
-        db.ref('signals').push({signal:"START_MODE2", from:"system", time:Date.now()});
-    }
 };
 
 // ---- Señales ----
@@ -125,24 +134,42 @@ function executeQueue(){
     });
 }
 
+function castVote(mode){
+    if(!playerId) return;
+    db.ref('signals').push({signal:"VOTE:"+mode, from:playerId, time:Date.now()});
+}
+
 db.ref('signals').on('child_added', snap=>{
     const data = snap.val();
     if(!data) return;
-    if(data.signal==="START_MODE2"){
-        startGame();
+    
+    if(data.signal.startsWith("VOTE:")){
+        votes[data.from] = data.signal.split(":")[1];
+        votesStatus.textContent = Object.entries(votes).map(([pid,m])=>pid.slice(-4)+"→"+m).join(" | ");
+        if(!gameStarted && Object.keys(votes).length>=2){
+            const counts = Object.values(votes).reduce((acc,m)=>{
+                acc[m]=(acc[m]||0)+1; return acc;
+            },{});
+            const selectedMode = counts["mode2"]>counts["mode1"] ? "mode2" : counts["mode1"]>counts["mode2"] ? "mode1" : Math.random()<0.5?"mode1":"mode2";
+            db.ref('signals').push({signal:"START:"+selectedMode, from:"system", time:Date.now()});
+        }
+    } else if(data.signal.startsWith("START:")){
+        startGame(data.signal.split(":")[1]);
     } else if(gameStarted){
         processSignal(data);
     }
 });
 
 // ---- Juego ----
-function startGame(){
+function startGame(mode){
     if(gameStarted) return;
+    gameMode=mode;
     gameStarted=true;
-    statusDiv.textContent="Juego iniciado (modo 2)";
-    spectatorArea.style.display= playerId ? "none" : "block";
+    voteArea.style.display="none";
+    controllerArea.style.display=playerId?"block":"none";
+    spectatorArea.style.display="block";
+    statusDiv.textContent="Juego iniciado ("+mode+")";
 
-    // inicializar posiciones para TODOS (jugadores y espectadores)
     db.ref('players').once('value').then(psnap=>{
         const players = psnap.val()||{};
         const ids = Object.keys(players);
@@ -156,9 +183,11 @@ function startGame(){
 
 function cancelGame(){
     gameStarted=false;
+    voteArea.style.display="none";
     controllerArea.style.display="none";
     spectatorArea.style.display="none";
     playerPositions={};
+    gameMode=null;
     statusDiv.textContent="Partida cancelada. Vuelve al lobby.";
 }
 
@@ -181,39 +210,63 @@ function processSignal(data){
 }
 
 function renderBoard(){
-    if(playerId) return; // jugadores no ven tablero
-
     boardDiv.innerHTML="";
-    const container=document.createElement("div");
-    container.id="mode2Container";
-    const pids=Object.keys(playerPositions);
-    pids.forEach(pid=>{
-        const wrapper=document.createElement("div");
-        const title=document.createElement("div");
-        title.textContent="Jugador "+pid.slice(-4);
-        wrapper.appendChild(title);
+    if(gameMode==="mode1" || !gameMode){
+        // Modo 1: un tablero con todos los jugadores
         const b=document.createElement("div");
         b.className="board";
-        const p=playerPositions[pid]; // solo este jugador
         for(let i=0;i<boardSize;i++){
             for(let j=0;j<boardSize;j++){
                 const cell=document.createElement("div");
                 cell.className="cell";
                 if(i===0 && j===boardSize-1) cell.classList.add("goal");
-                if(p.x===j && p.y===i){
-                    const span=document.createElement("span");
-                    span.textContent=p.symbol;
-                    span.style.color=p.symbol==="▲"?"red":"blue";
-                    span.style.fontSize="24px";
-                    cell.appendChild(span);
+                for(const pid in playerPositions){
+                    const p=playerPositions[pid];
+                    if(p.x===j && p.y===i){
+                        const span=document.createElement("span");
+                        span.textContent=p.symbol;
+                        span.style.color=p.symbol==="▲"?"red":"blue";
+                        span.style.fontSize="24px";
+                        cell.appendChild(span);
+                    }
                 }
                 b.appendChild(cell);
             }
         }
-        wrapper.appendChild(b);
-        container.appendChild(wrapper);
-    });
-    boardDiv.appendChild(container);
+        boardDiv.appendChild(b);
+    } else if(gameMode==="mode2"){
+        // Modo 2: dos tableros independientes, cada uno con un solo jugador
+        const container=document.createElement("div");
+        container.id="mode2Container";
+        const pids=Object.keys(playerPositions);
+        pids.forEach(pid=>{
+            const wrapper=document.createElement("div");
+            const title=document.createElement("div");
+            title.textContent="Jugador "+pid.slice(-4);
+            wrapper.appendChild(title);
+            const b=document.createElement("div");
+            b.className="board";
+            const p=playerPositions[pid]; // Solo este jugador
+            for(let i=0;i<boardSize;i++){
+                for(let j=0;j<boardSize;j++){
+                    const cell=document.createElement("div");
+                    cell.className="cell";
+                    if(i===0 && j===boardSize-1) cell.classList.add("goal");
+                    if(p.x===j && p.y===i){
+                        const span=document.createElement("span");
+                        span.textContent=p.symbol;
+                        span.style.color=p.symbol==="▲"?"red":"blue";
+                        span.style.fontSize="24px";
+                        cell.appendChild(span);
+                    }
+                    b.appendChild(cell);
+                }
+            }
+            wrapper.appendChild(b);
+            container.appendChild(wrapper);
+        });
+        boardDiv.appendChild(container);
+    }
 }
 
 updateStatus();
