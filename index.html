@@ -4,14 +4,16 @@
   <meta charset="UTF-8">
   <title>Juego en Vivo</title>
   <style>
-    body { font-family: Arial; text-align: center; margin-top: 40px; }
+    body { font-family: Arial; text-align: center; margin-top: 20px; }
     button { margin: 5px; padding: 10px 18px; font-size: 16px; }
-    #signals { margin-top: 20px; font-size: 16px; text-align:left; max-width:700px; margin-left:auto; margin-right:auto; }
     #status { margin: 14px 0; font-size: 18px; font-weight: bold; }
-    #voteArea { margin: 14px 0; }
-    #gameArea { margin-top: 18px; font-weight: bold; color: #155; }
+    #voteArea, #controllerArea, #spectatorArea, #gameArea { display:none; margin-top:20px; }
     #votesStatus { margin-top: 8px; font-style: italic; }
     #playersInfo { margin-top: 8px; }
+    #board { display: grid; grid-template-columns: repeat(5, 60px); grid-gap: 4px; justify-content: center; margin-top:20px; }
+    .cell { width: 60px; height: 60px; border: 1px solid #aaa; display:flex; align-items:center; justify-content:center; font-weight:bold; }
+    .goal { background: lightgreen; }
+    .player { background: lightblue; }
   </style>
 </head>
 <body>
@@ -26,37 +28,34 @@
 
   <div id="playersInfo"></div>
 
-  <div id="controls" style="display:none; margin-top:12px;">
-    <h3>Tus señales</h3>
-    <button onclick="sendSignal('A')">A</button>
-    <button onclick="sendSignal('B')">B</button>
-    <button onclick="sendSignal('C')">C</button>
-    <button onclick="sendSignal('D')">D</button>
-    <button onclick="sendSignal('E')">E</button>
-  </div>
-
-  <!-- Votación (aparece cuando hay 2 jugadores y estás dentro) -->
-  <div id="voteArea" style="display:none;">
+  <!-- Votación -->
+  <div id="voteArea">
     <h3>Votación del modo</h3>
     <button onclick="castVote('mode1')">Modo 1 — Una pantalla</button>
     <button onclick="castVote('mode2')">Modo 2 — Dos pantallas</button>
     <div id="votesStatus">Esperando votos...</div>
   </div>
 
-  <div id="gameArea" style="display:none;">
-    <p id="gameMsg">Juego no iniciado</p>
-    <!-- Aquí más adelante pondremos el canvas / lógica del juego -->
+  <!-- Área de mando (jugadores) -->
+  <div id="controllerArea">
+    <h2>Mando del Jugador</h2>
+    <button onclick="sendSignal('FORWARD')">Avanzar</button>
+    <button onclick="sendSignal('TURN_LEFT')">Girar Izq</button>
+    <button onclick="sendSignal('TURN_RIGHT')">Girar Der</button>
+    <button onclick="sendSignal('EXECUTE')">Ejecutar ruta</button>
   </div>
 
-  <h3>Logs de señales</h3>
-  <div id="signals"></div>
+  <!-- Área de espectador -->
+  <div id="spectatorArea">
+    <h2>Juego en curso</h2>
+    <div id="board"></div>
+  </div>
 
   <!-- Firebase v8 -->
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
 
   <script>
-    // Configuración Firebase (la tuya)
     const firebaseConfig = {
       apiKey: "AIzaSyDGYEYs5YFZqMpcU0rJSeLxdzCt1iaumis",
       authDomain: "welcomedayarise.firebaseapp.com",
@@ -70,179 +69,130 @@
     firebase.initializeApp(firebaseConfig);
     const db = firebase.database();
 
-    // Estado local
     let playerId = null;
     let playerRef = null;
     let gameStarted = false;
-    const votes = {}; // { playerId: 'mode1' }
+    const votes = {};
 
-    // DOM
-    const joinBtn = document.getElementById('joinBtn');
-    const leaveBtn = document.getElementById('leaveBtn');
-    const statusDiv = document.getElementById('status');
-    const controlsDiv = document.getElementById('controls');
-    const voteArea = document.getElementById('voteArea');
-    const votesStatus = document.getElementById('votesStatus');
-    const signalsDiv = document.getElementById('signals');
-    const playersInfo = document.getElementById('playersInfo');
-    const gameArea = document.getElementById('gameArea');
-    const gameMsg = document.getElementById('gameMsg');
+    const joinBtn = document.getElementById("joinBtn");
+    const leaveBtn = document.getElementById("leaveBtn");
+    const statusDiv = document.getElementById("status");
+    const playersInfo = document.getElementById("playersInfo");
+    const voteArea = document.getElementById("voteArea");
+    const votesStatus = document.getElementById("votesStatus");
+    const controllerArea = document.getElementById("controllerArea");
+    const spectatorArea = document.getElementById("spectatorArea");
+    const boardDiv = document.getElementById("board");
 
-    // Actualizar estado del lobby (players)
+    // ---- Lobby ----
     async function updateStatus() {
-      const snap = await db.ref('players').once('value');
+      const snap = await db.ref("players").once("value");
       const players = snap.val() || {};
       const ids = Object.keys(players);
-      playersInfo.innerHTML = `Jugadores: ${ids.length} / 2 <br> ${ids.join(', ') || '—'}`;
+      playersInfo.innerHTML = `Jugadores: ${ids.length} / 2 <br> ${ids.join(", ") || "—"}`;
 
-      const numPlayers = ids.length;
       if (playerId && !gameStarted) {
-        statusDiv.textContent = 'Estás jugando';
-      } else if (!playerId && numPlayers < 2) {
-        statusDiv.textContent = `Huecos libres: ${2 - numPlayers}`;
-      } else if (!playerId && numPlayers >= 2) {
-        statusDiv.textContent = 'Eres espectador';
+        statusDiv.textContent = "Estás jugando";
+      } else if (!playerId && ids.length < 2) {
+        statusDiv.textContent = `Huecos libres: ${2 - ids.length}`;
+      } else if (!playerId && ids.length >= 2) {
+        statusDiv.textContent = "Eres espectador";
       }
 
-      // Mostramos la votación si estamos dentro y ya hay 2 jugadores (y aún no se empezó el juego)
-      if (playerId && numPlayers === 2 && !gameStarted) {
-        voteArea.style.display = 'block';
+      if (playerId && ids.length === 2 && !gameStarted) {
+        voteArea.style.display = "block";
       } else {
-        voteArea.style.display = 'none';
+        voteArea.style.display = "none";
       }
     }
+    db.ref("players").on("value", updateStatus);
 
-    // Listener en /players para actualizar UI en tiempo real
-    db.ref('players').on('value', updateStatus);
-
-    // Join
     joinBtn.onclick = async () => {
-      const snapshot = await db.ref('players').once('value');
+      const snapshot = await db.ref("players").once("value");
       const players = snapshot.val() || {};
-      if (playerId) return; // ya unido en esta pestaña
-
+      if (playerId) return;
       if (Object.keys(players).length < 2) {
         playerId = Date.now().toString();
-        playerRef = db.ref('players/' + playerId);
+        playerRef = db.ref("players/" + playerId);
         await playerRef.set({ joinedAt: Date.now() });
-        // onDisconnect: eliminar si cierra pestaña o pierde conexión
         playerRef.onDisconnect().remove();
-
-        // UI
         joinBtn.disabled = true;
-        leaveBtn.style.display = 'inline-block';
-        controlsDiv.style.display = 'block';
+        leaveBtn.style.display = "inline-block";
         updateStatus();
       } else {
-        alert('Ya hay 2 jugadores, eres espectador.');
+        alert("Ya hay 2 jugadores, eres espectador.");
         updateStatus();
       }
     };
 
-    // Leave
     leaveBtn.onclick = async () => {
       if (!playerId) return;
-      await db.ref('players/' + playerId).remove();
-      // limpiar estado local
+      await db.ref("players/" + playerId).remove();
       playerId = null;
       playerRef = null;
-      controlsDiv.style.display = 'none';
       joinBtn.disabled = false;
-      voteArea.style.display = 'none';
+      leaveBtn.style.display = "none";
+      controllerArea.style.display = "none";
+      spectatorArea.style.display = "none";
       updateStatus();
     };
 
-    // Enviar señal normal
+    // ---- Señales ----
     function sendSignal(signal) {
-      const valid = ['A','B','C','D','E'];
-      if (!playerId) { alert('Únete primero para enviar señales'); return; }
-      if (!valid.includes(signal)) return;
-      db.ref('signals').push({
-        signal,
-        from: playerId,
-        time: Date.now()
-      });
+      if (!playerId) { alert("Únete primero"); return; }
+      db.ref("signals").push({ signal, from: playerId, time: Date.now() });
     }
 
-    // Cast vote via signals
     function castVote(mode) {
-      if (!playerId) { alert('Únete primero para votar'); return; }
-      if (gameStarted) { alert('Juego ya iniciado'); return; }
-      db.ref('signals').push({
-        signal: 'VOTE:' + mode,
-        from: playerId,
-        time: Date.now()
-      });
+      if (!playerId) return;
+      db.ref("signals").push({ signal: "VOTE:" + mode, from: playerId, time: Date.now() });
     }
 
-    // Escuchar señales en /signals (tanto logs como votos)
-    db.ref('signals').on('child_added', (snap) => {
+    db.ref("signals").on("child_added", (snap) => {
       const data = snap.val();
       if (!data) return;
 
-      // Mostrar en logs
-      const timeStr = data.time ? new Date(data.time).toLocaleTimeString() : '';
-      const shortFrom = (data.from && typeof data.from === 'string') ? data.from.slice(-6) : 'anon';
-      const node = document.createElement('div');
-      node.textContent = `[${timeStr}] ${shortFrom} → ${data.signal}`;
-      signalsDiv.prepend(node);
+      if (data.signal.startsWith("VOTE:")) {
+        votes[data.from] = data.signal.split(":")[1];
+        votesStatus.textContent = Object.entries(votes).map(([pid, m]) => `${pid.slice(-4)}→${m}`).join(" | ");
 
-      // Si es voto, procesarlo
-      if (typeof data.signal === 'string' && data.signal.startsWith('VOTE:')) {
-        const mode = data.signal.split(':',2)[1];
-        votes[data.from] = mode; // el último voto del playerId cuenta
-        renderVotesUI();
-
-        // Si ya hay 2 votos (de 2 jugadores) y el juego no ha empezado, decidimos
-        const voterIds = Object.keys(votes).filter(id => !!id);
-        if (!gameStarted) {
-          // comprobar que las 2 entradas son de jugadores actuales
-          db.ref('players').once('value').then(psnap => {
-            const players = psnap.val() || {};
-            const playerIds = Object.keys(players);
-            const validVoters = voterIds.filter(v => playerIds.includes(v));
-            if (validVoters.length >= 2) {
-              // decidir por mayoría
-              const modeCount = Object.values(votes).reduce((acc,m) => {
-                acc[m] = (acc[m]||0) + 1; return acc;
-              }, {});
-              const chosen = (modeCount['mode2'] > modeCount['mode1']) ? 'mode2' : 'mode1';
-              // Iniciar juego localmente para todos los clientes que ven estas señales
-              startGame(chosen);
-            }
-          });
+        const voterIds = Object.keys(votes);
+        if (!gameStarted && voterIds.length >= 2) {
+          const count = Object.values(votes).reduce((acc,m) => { acc[m]=(acc[m]||0)+1; return acc; },{});
+          const chosen = (count["mode2"] > count["mode1"]) ? "mode2" : "mode1";
+          startGame(chosen);
         }
       }
     });
 
-    function renderVotesUI() {
-      const entries = Object.entries(votes).map(([pid, m]) => `${pid.slice(-6)} → ${m}`);
-      votesStatus.textContent = entries.length ? entries.join(' | ') : 'Esperando votos...';
-    }
-
-    // startGame (aquí empieza la lógica del juego; por ahora placeholder)
-    function startGame(chosenMode) {
+    // ---- Juego ----
+    function startGame(mode) {
       if (gameStarted) return;
       gameStarted = true;
-      voteArea.style.display = 'none';
-      gameArea.style.display = 'block';
-      gameMsg.textContent = 'Juego iniciado — modo: ' + chosenMode;
-      statusDiv.textContent = 'Juego en marcha';
-      // DESDE AQUÍ: arranca tu lógica real de juego (canvas, moves, etc.)
-      // Ejemplo: podrías redirigir a game.html o mostrar/crear un canvas y conectar listeners de /moves.
-      console.log('START GAME:', chosenMode);
+      voteArea.style.display = "none";
 
-      // (opcional) bloquear join al empezar
-      joinBtn.disabled = true;
+      if (playerId) {
+        // Jugador → mostrar mando
+        controllerArea.style.display = "block";
+      } else {
+        // Espectador → mostrar tablero grande
+        spectatorArea.style.display = "block";
+        renderBoard();
+      }
+      statusDiv.textContent = "Juego iniciado (" + mode + ")";
     }
 
-    // Mostrar señales históricas al cargar (child_added hará esto)
-    // update inicial del estado
+    function renderBoard() {
+      boardDiv.innerHTML = "";
+      for (let i=0; i<25; i++) {
+        const cell = document.createElement("div");
+        cell.className = "cell";
+        if (i === 24) cell.classList.add("goal");
+        boardDiv.appendChild(cell);
+      }
+    }
+
     updateStatus();
-
-    // Nota: no tocamos reglas de DB; el hecho de usar /signals para votos respeta
-    // tu regla actual que sólo permite escribir /signals si `from` existe en /players.
-
   </script>
 </body>
 </html>
