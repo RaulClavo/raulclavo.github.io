@@ -1,120 +1,578 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <meta charset="UTF-8">
-  <title>Juego en Vivo</title>
+  <meta charset="UTF-8" />
+  <title>Juego en Vivo — Con modos y ejecución de instrucciones</title>
   <style>
-    body { font-family: Arial; text-align: center; margin-top: 50px; }
-    button { margin: 5px; padding: 10px 20px; font-size: 18px; }
-    #signals { margin-top: 20px; font-size: 24px; }
-    #status { margin: 20px; font-size: 20px; font-weight: bold; }
+    body { font-family: Arial; text-align: center; margin: 20px; }
+    button { margin: 5px; padding: 8px 14px; font-size: 16px; }
+    #status { margin: 12px 0; font-size: 18px; font-weight: bold; }
+    #lobby, #game, #voteArea { margin: 12px auto; max-width: 900px; }
+    #gameCanvas, #gameCanvas2 { border: 1px solid #333; background: #fafafa; }
+    .row { display:flex; justify-content:center; gap:20px; align-items:flex-start; }
+    .col { display:flex; flex-direction:column; align-items:center; }
+    #controls { margin-top: 10px; }
+    #instructionsList { min-height: 24px; margin-top:6px; }
+    #scores { margin-top: 8px; font-weight: bold; }
+    #timer { font-size: 20px; margin-top: 6px; }
+    .hidden { display:none; }
   </style>
 </head>
 <body>
   <h1>Juego en Vivo</h1>
-  
+
   <div id="status">Comprobando estado...</div>
 
-  <button id="joinBtn">Unirse</button>
+  <div id="lobby">
+    <button id="joinBtn">Unirse</button>
+    <button id="leaveBtn" class="hidden">Salir</button>
 
-  <div id="controls" style="display:none;">
-    <h2>Tus señales</h2>
-    <button onclick="sendSignal('A')">A</button>
-    <button onclick="sendSignal('B')">B</button>
-    <button onclick="sendSignal('C')">C</button>
-    <button onclick="sendSignal('D')">D</button>
-    <button onclick="sendSignal('E')">E</button>
+    <div id="playersInfo"></div>
+
+    <div id="voteArea" class="hidden">
+      <h3>Vota el modo de juego</h3>
+      <div>
+        <button id="voteMode1">Modo 1 — Una pantalla (espectador ve ambos)</button>
+        <button id="voteMode2">Modo 2 — Dos pantallas (compiten por niveles)</button>
+      </div>
+      <div id="votesStatus"></div>
+    </div>
   </div>
 
-  <h2>Señales enviadas</h2>
-  <div id="signals"></div>
+  <div id="game" class="hidden">
+    <div id="modeInfo"></div>
+    <div id="timer" class="hidden"></div>
+
+    <div class="row" id="gameArea">
+      <!-- Canvas(s) -->
+      <div class="col">
+        <canvas id="gameCanvas" width="400" height="400"></canvas>
+        <div id="scores">Scores: —</div>
+      </div>
+
+      <!-- Second canvas only visible in mode2 (or spectators can see both) -->
+      <div class="col hidden" id="colCanvas2">
+        <canvas id="gameCanvas2" width="400" height="400"></canvas>
+        <div id="scores2">Scores2: —</div>
+      </div>
+    </div>
+
+    <!-- Controls for players only -->
+    <div id="controls" class="hidden">
+      <h3>Tus instrucciones</h3>
+      <div>
+        <button onclick="addInstruction('A')">Avanzar (A)</button>
+        <button onclick="addInstruction('L')">Girar Izq (L)</button>
+        <button onclick="addInstruction('R')">Girar Der (R)</button>
+        <button onclick="sendInstructions()">Enviar instrucciones</button>
+      </div>
+      <div id="instructionsList"></div>
+    </div>
+
+    <h3>Señales (logs)</h3>
+    <div id="signals"></div>
+    <div id="result" style="font-size:18px;margin-top:10px;"></div>
+  </div>
 
   <!-- Firebase v8 -->
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
 
   <script>
-    const firebaseConfig = {
-      apiKey: "AIzaSyDGYEYs5YFZqMpcU0rJSeLxdzCt1iaumis",
-      authDomain: "welcomedayarise.firebaseapp.com",
-      databaseURL: "https://welcomedayarise-default-rtdb.europe-west1.firebasedatabase.app",
-      projectId: "welcomedayarise",
-      storageBucket: "welcomedayarise.firebasestorage.app",
-      messagingSenderId: "417894091538",
-      appId: "1:417894091538:web:a2eab16a056dfc902881cb",
-      measurementId: "G-8ZXHLVM20C"
-    };
+  /********** CONFIG FIREBASE **********/
+  const firebaseConfig = {
+    apiKey: "AIzaSyDGYEYs5YFZqMpcU0rJSeLxdzCt1iaumis",
+    authDomain: "welcomedayarise.firebaseapp.com",
+    databaseURL: "https://welcomedayarise-default-rtdb.europe-west1.firebasedatabase.app",
+    projectId: "welcomedayarise",
+    storageBucket: "welcomedayarise.firebasestorage.app",
+    messagingSenderId: "417894091538",
+    appId: "1:417894091538:web:a2eab16a056dfc902881cb",
+    measurementId: "G-8ZXHLVM20C"
+  };
+  firebase.initializeApp(firebaseConfig);
+  const db = firebase.database();
 
-    firebase.initializeApp(firebaseConfig);
-    const db = firebase.database();
+  /********** ESTADO LOCAL **********/
+  let playerId = null;          // id temporal por timestamp
+  let role = null;              // "player" o "spectator"
+  let myPlayerIndex = null;     // 0 o 1 si eres jugador (determina inicio)
+  let instructions = [];        // acumulador local de instrucciones
+  const JOIN_LIMIT = 2;
+  const GRID_SIZE = 8;
+  const CELL_PX = 50;
+  const ANIM_DELAY = 300; // ms por instrucción
 
-    let playerId = null;
-    const joinBtn = document.getElementById("joinBtn");
-    const statusDiv = document.getElementById("status");
+  /********** DOM **********/
+  const joinBtn = document.getElementById('joinBtn');
+  const leaveBtn = document.getElementById('leaveBtn');
+  const statusDiv = document.getElementById('status');
+  const playersInfo = document.getElementById('playersInfo');
 
-    // Función para actualizar el estado
-    async function updateStatus() {
-      const snapshot = await db.ref("players").once("value");
-      const players = snapshot.val() || {};
-      const numPlayers = Object.keys(players).length;
+  const voteArea = document.getElementById('voteArea');
+  const voteMode1Btn = document.getElementById('voteMode1');
+  const voteMode2Btn = document.getElementById('voteMode2');
+  const votesStatus = document.getElementById('votesStatus');
 
-      if (playerId) {
-        statusDiv.textContent = "Estás jugando";
-      } else if (numPlayers < 2) {
-        statusDiv.textContent = `Huecos libres: ${2 - numPlayers}`;
-      } else {
-        statusDiv.textContent = "Eres espectador";
-      }
+  const gameDiv = document.getElementById('game');
+  const modeInfo = document.getElementById('modeInfo');
+  const timerDiv = document.getElementById('timer');
+  const controlsDiv = document.getElementById('controls');
+  const instructionsList = document.getElementById('instructionsList');
+  const signalsDiv = document.getElementById('signals');
+  const resultDiv = document.getElementById('result');
+
+  const canvas = document.getElementById('gameCanvas');
+  const ctx = canvas.getContext('2d');
+  const canvas2 = document.getElementById('gameCanvas2');
+  const ctx2 = canvas2.getContext('2d');
+  const colCanvas2 = document.getElementById('colCanvas2');
+  const scoresDiv = document.getElementById('scores');
+  const scoresDiv2 = document.getElementById('scores2');
+
+  /********** LOBBY / JOIN / LEAVE **********/
+  async function updateLobbyUI() {
+    const snap = await db.ref('players').once('value');
+    const players = snap.val() || {};
+    const ids = Object.keys(players);
+    playersInfo.innerHTML = `Jugadores actuales: ${ids.length} / ${JOIN_LIMIT} <br> ${ids.join(', ') || '—'}`;
+
+    // si ya hay 2 y no somos jugador -> espectador
+    if (!playerId) {
+      role = (ids.length >= JOIN_LIMIT) ? 'spectator' : 'notjoined';
+    } else {
+      role = 'player';
     }
 
-    db.ref("players").on("value", updateStatus);
+    statusDiv.textContent = (role === 'player') ? 'Estás jugando' : (role === 'spectator' ? 'Eres espectador' : 'Aún no te has unido');
+    // show vote area if at least one player joined and we are player or spectator (we'll only accept votes from players later)
+    voteArea.classList.toggle('hidden', ids.length === 0);
+  }
 
-    // Botón Unirse
-    joinBtn.onclick = async () => {
-      const snapshot = await db.ref("players").once("value");
-      const players = snapshot.val() || {};
-      
-      if (playerId) return;
+  db.ref('players').on('value', updateLobbyUI);
 
-      if (Object.keys(players).length < 2) {
-        playerId = Date.now().toString();
-        const playerRef = db.ref("players/" + playerId);
-        await playerRef.set(true);
+  joinBtn.onclick = async () => {
+    const snap = await db.ref('players').once('value');
+    const players = snap.val() || {};
+    if (playerId) return; // ya unido en esta pestaña
 
-        // Configurar eliminación automática al cerrar la pestaña
-        window.addEventListener("beforeunload", async () => {
-          await playerRef.remove();
-        });
+    if (Object.keys(players).length < JOIN_LIMIT) {
+      playerId = Date.now().toString();
+      const playerRef = db.ref('players/' + playerId);
+      await playerRef.set({ joinedAt: Date.now() });
 
-        document.getElementById("controls").style.display = "block";
-        joinBtn.disabled = true;
-        updateStatus();
-      } else {
-        alert("Ya hay 2 jugadores, eres espectador.");
-        updateStatus();
-      }
-    };
+      // onDisconnect para eliminar al cerrar pestaña o perder conexion
+      playerRef.onDisconnect().remove();
 
-    // Enviar señal
-    function sendSignal(signal) {
-      const validSignals = ['A', 'B', 'C', 'D', 'E'];
-      if (!validSignals.includes(signal)) return;
+      // asignar índice (0..n-1) según orden actual
+      const snapshot = await db.ref('players').once('value');
+      const ids = Object.keys(snapshot.val() || {});
+      myPlayerIndex = ids.indexOf(playerId); // 0 o 1
+      role = 'player';
 
-      db.ref("signals").push({
-        signal,
-        from: playerId,
-        time: Date.now()
+      joinBtn.disabled = true;
+      leaveBtn.classList.remove('hidden');
+      controlsDiv.classList.remove('hidden');
+      updateLobbyUI();
+
+      // si somos el segundo jugador podemos habilitar la votacion (o ya existe)
+      checkStartVoting();
+    } else {
+      alert('Ya hay 2 jugadores. Eres espectador.');
+      updateLobbyUI();
+    }
+  };
+
+  leaveBtn.onclick = async () => {
+    if (!playerId) return;
+    await db.ref('players/' + playerId).remove();
+    playerId = null;
+    myPlayerIndex = null;
+    role = null;
+    joinBtn.disabled = false;
+    leaveBtn.classList.add('hidden');
+    controlsDiv.classList.add('hidden');
+    instructions = [];
+    instructionsList.textContent = '';
+    updateLobbyUI();
+  };
+
+  /********** VOTACION DE MODO **********/
+  function checkStartVoting() {
+    // si hay al menos 1 jugador presente mostramos status de votos
+    db.ref('votes').on('value', (snap) => {
+      const votes = snap.val() || {};
+      const keys = Object.keys(votes);
+      votesStatus.textContent = `Votos: ${keys.length} -> ${JSON.stringify(votes)}`;
+      // cuando ambos jugadores hayan votado, se decide modo
+      db.ref('players').once('value').then(psnap => {
+        const players = psnap.val() || {};
+        if (Object.keys(players).length === JOIN_LIMIT && keys.length >= JOIN_LIMIT) {
+          decideMode(votes);
+        }
+      });
+    });
+  }
+
+  voteMode1Btn.onclick = () => castVote('mode1');
+  voteMode2Btn.onclick = () => castVote('mode2');
+
+  async function castVote(mode) {
+    if (!playerId) { alert('Debes unirte para votar'); return; }
+    await db.ref('votes/' + playerId).set(mode);
+  }
+
+  // Decide mode by majority; tie -> mode1 default
+  async function decideMode(votesObj) {
+    const votes = Object.values(votesObj || {});
+    const countMode1 = votes.filter(v => v === 'mode1').length;
+    const countMode2 = votes.filter(v => v === 'mode2').length;
+    const chosen = (countMode2 > countMode1) ? 'mode2' : 'mode1';
+    // write chosen mode to db if not set
+    const modeSnap = await db.ref('mode').once('value');
+    if (!modeSnap.exists()) {
+      await db.ref('mode').set({ chosen, at: Date.now() });
+    }
+  }
+
+  // Watch for mode set and then start game
+  db.ref('mode').on('value', (snap) => {
+    const m = snap.val();
+    if (m && m.chosen) {
+      startGame(m.chosen);
+    }
+  });
+
+  /********** GAME LÓGICA **********/
+  // DB structure:
+  // /players/{id}
+  // /votes/{playerId} = 'mode1'|'mode2'
+  // /mode{ chosen: 'mode1'|'mode2' }
+  // /moves/{playerId}/{pushId} -> { seq: [...], time }
+  // /scores/{playerId} -> integer (mode2)
+  // /timer -> { start: timestamp, duration: seconds } (mode2)
+
+  let currentMode = null;
+  let playersState = {}; // { playerId: {x,y,dir,score} }
+
+  function startGame(mode) {
+    currentMode = mode;
+    // show game UI
+    document.getElementById('lobby').classList.add('hidden');
+    gameDiv.classList.remove('hidden');
+    modeInfo.textContent = `Modo elegido: ${mode === 'mode1' ? 'Una pantalla — Espectador ve ambos' : 'Dos pantallas — Compite por niveles'}`;
+
+    // Show/hide second canvas depending on mode
+    if (mode === 'mode1') {
+      colCanvas2.classList.add('hidden');
+      timerDiv.classList.add('hidden');
+    } else {
+      colCanvas2.classList.remove('hidden');
+      timerDiv.classList.remove('hidden');
+      // initialize mode2 timer if not exist
+      db.ref('timer').once('value').then(snap => {
+        if (!snap.exists()) {
+          // set 60 seconds round by default when both players present
+          const duration = 60; // seconds tweakable
+          db.ref('timer').set({start: Date.now(), duration});
+        }
       });
     }
 
-    // Escuchar señales en vivo
-    db.ref("signals").on("child_added", (snap) => {
-      const data = snap.val();
-      const div = document.getElementById("signals");
-      div.innerHTML = `<div>${data.signal}</div>` + div.innerHTML;
+    // initialize players states based on current players list
+    db.ref('players').once('value').then(snap => {
+      const p = snap.val() || {};
+      const ids = Object.keys(p);
+      // assign start positions by order
+      playersState = {};
+      ids.forEach((id, idx) => {
+        playersState[id] = {
+          x: idx === 0 ? 0 : GRID_SIZE - 1,
+          y: idx === 0 ? 0 : GRID_SIZE - 1,
+          dir: idx === 0 ? 'right' : 'left',
+          score: 0
+        };
+      });
+      renderAll();
     });
 
-    updateStatus();
+    // Listen for moves
+    db.ref('moves').on('child_added', async snap => {
+      const playerKey = snap.key; // it's a push under /moves -> but we stored as /moves/{playerId}/{pushId}
+      // but we used moves/{playerId}/{pushId}; child_added on /moves gives playerId nodes.
+    });
+
+    // Instead listen per-player moves (safer)
+    db.ref('moves').on('value', snap => {
+      // We will process every move push present by walking the tree
+      const all = snap.val() || {};
+      // Flatten: for each playerId take its pushes in chronological order
+      for (const pid in all) {
+        const pushes = all[pid] || {};
+        // for each push (pushId) that has not been executed yet, execute.
+        // We'll mark executed pushes by moving them to /moves_executed/{playerId}/{pushId} or by setting a flag executed=true.
+        // To keep DB simpler, we set `executed: true` on the push after executing.
+        for (const pushId in pushes) {
+          const push = pushes[pushId];
+          if (!push || push.executed) continue;
+          executeInstructionsAnimated(pid, push.seq, pushId);
+        }
+      }
+    });
+
+    // Listen timer for mode2
+    if (mode === 'mode2') {
+      db.ref('timer').on('value', (snap) => {
+        const t = snap.val();
+        if (!t) return;
+        const now = Date.now();
+        const end = t.start + (t.duration * 1000);
+        const remaining = Math.max(0, Math.ceil((end - now) / 1000));
+        timerDiv.classList.remove('hidden');
+        timerDiv.textContent = `Tiempo restante: ${remaining}s`;
+        if (remaining <= 0) {
+          finishMode2Round();
+        }
+      });
+    }
+
+    // Listen signals (logs)
+    db.ref('signals').on('child_added', snap => {
+      const d = snap.val();
+      if (!d) return;
+      const el = document.createElement('div');
+      el.textContent = `[${new Date(d.time).toLocaleTimeString()}] ${d.from || 'anon'} -> ${d.signal}`;
+      signalsDiv.prepend(el);
+    });
+
+    // Listen scores (mode2)
+    db.ref('scores').on('value', snap => {
+      const s = snap.val() || {};
+      let text = 'Scores: ';
+      for (const pid in s) text += `${pid.slice(-4)}:${s[pid]} `;
+      scoresDiv.textContent = text;
+      scoresDiv2.textContent = text;
+    });
+  }
+
+  /********** EJECUCION ANIMADA DE INSTRUCCIONES **********/
+  // Execute seq array for player pid with a small animation delay
+  async function executeInstructionsAnimated(pid, seq, pushId) {
+    if (!playersState[pid]) {
+      // init default pos if missing
+      playersState[pid] = {
+        x: 0, y: 0, dir: 'right', score: 0
+      };
+    }
+
+    // mark as executed immediately to avoid double processing
+    await db.ref(`moves/${pid}/${pushId}/executed`).set(true);
+
+    for (let i = 0; i < seq.length; i++) {
+      const instr = seq[i];
+      applyInstruction(playersState[pid], instr);
+
+      // check bounds
+      playersState[pid].x = Math.max(0, Math.min(GRID_SIZE - 1, playersState[pid].x));
+      playersState[pid].y = Math.max(0, Math.min(GRID_SIZE - 1, playersState[pid].y));
+
+      renderAll();
+
+      // check for reaching goal:
+      if (checkGoal(playersState[pid], pid)) {
+        // increment score
+        await db.ref(`scores/${pid}`).transaction(current => (current || 0) + 1);
+        // reset player to start for next level
+        resetPlayerPosition(pid);
+        renderAll();
+      }
+
+      // small delay between instructions (animate)
+      await wait(ANIM_DELAY);
+    }
+  }
+
+  function wait(ms) { return new Promise(res => setTimeout(res, ms)); }
+
+  function applyInstruction(p, instr) {
+    if (instr === 'A') {
+      if (p.dir === 'up') p.y -= 1;
+      else if (p.dir === 'down') p.y += 1;
+      else if (p.dir === 'left') p.x -= 1;
+      else if (p.dir === 'right') p.x += 1;
+    } else if (instr === 'L') {
+      const map = { up:'left', left:'down', down:'right', right:'up' };
+      p.dir = map[p.dir];
+    } else if (instr === 'R') {
+      const map = { up:'right', right:'down', down:'left', left:'up' };
+      p.dir = map[p.dir];
+    }
+  }
+
+  function checkGoal(p, pid) {
+    // goal depends on player's starting index:
+    // player who started at (0,0) aims (GRID_SIZE-1, GRID_SIZE-1)
+    // player who started at (n-1,n-1) aims (0,0)
+    const startIsTopLeft = checkIfStartTopLeft(pid);
+    if (startIsTopLeft) return p.x === GRID_SIZE - 1 && p.y === GRID_SIZE - 1;
+    return p.x === 0 && p.y === 0;
+  }
+
+  function checkIfStartTopLeft(pid) {
+    // check players ordering in DB to determine who is top-left
+    // read players snapshot
+    // If pid is first key -> top-left
+    // (Assumes player order stable)
+    // Synchronous check via previously loaded playersState keys:
+    const keys = Object.keys(playersState);
+    return keys.indexOf(pid) === 0;
+  }
+
+  function resetPlayerPosition(pid) {
+    const keys = Object.keys(playersState);
+    const idx = keys.indexOf(pid);
+    if (idx === 0) {
+      playersState[pid].x = 0; playersState[pid].y = 0; playersState[pid].dir = 'right';
+    } else {
+      playersState[pid].x = GRID_SIZE - 1; playersState[pid].y = GRID_SIZE - 1; playersState[pid].dir = 'left';
+    }
+  }
+
+  /********** RENDERING **********/
+  function renderAll() {
+    // mode1: draw both players on canvas (single)
+    // mode2: draw player 0 on canvas, player1 on canvas2
+    if (!currentMode) return;
+    if (currentMode === 'mode1') {
+      renderBoard(ctx, playersState);
+      colCanvas2.classList.add('hidden');
+    } else {
+      // mode2: split boards. Determine players by key order
+      const pkeys = Object.keys(playersState);
+      const left = pkeys[0] ? { [pkeys[0]]: playersState[pkeys[0]] } : {};
+      const right = pkeys[1] ? { [pkeys[1]]: playersState[pkeys[1]] } : {};
+      renderBoard(ctx, left);
+      renderBoard(ctx2, right);
+      colCanvas2.classList.remove('hidden');
+    }
+  }
+
+  function renderBoard(context, ps) {
+    // clear
+    context.clearRect(0,0, GRID_SIZE*CELL_PX, GRID_SIZE*CELL_PX);
+    context.strokeStyle = '#999';
+    context.lineWidth = 1;
+    context.font = '18px Arial';
+
+    // grid
+    for (let i=0;i<GRID_SIZE;i++){
+      for (let j=0;j<GRID_SIZE;j++){
+        context.strokeRect(i*CELL_PX, j*CELL_PX, CELL_PX, CELL_PX);
+      }
+    }
+
+    // draw goal squares (for top-left start goal is bottom-right; for other the opposite)
+    // we will draw both corners green so spectators can see both
+    context.fillStyle = '#c8f7c5';
+    context.fillRect((GRID_SIZE-1)*CELL_PX, (GRID_SIZE-1)*CELL_PX, CELL_PX, CELL_PX);
+    context.fillRect(0,0, CELL_PX, CELL_PX);
+
+    // draw players
+    let idx = 0;
+    for (const pid in ps) {
+      const p = ps[pid];
+      context.fillStyle = idx === 0 ? '#3478f6' : '#e67300';
+      context.fillRect(p.x*CELL_PX+4, p.y*CELL_PX+4, CELL_PX-8, CELL_PX-8);
+      // direction marker
+      context.fillStyle = '#fff';
+      const arrow = p.dir[0].toUpperCase();
+      context.fillText(arrow, p.x*CELL_PX + CELL_PX/2 - 6, p.y*CELL_PX + CELL_PX/2 + 6);
+      idx++;
+    }
+  }
+
+  /********** CONTROL DE INSTRUCCIONES (UI -> DB) **********/
+  function addInstruction(c) {
+    if (!playerId) { alert('Primero únete'); return; }
+    const valid = ['A','L','R'];
+    if (!valid.includes(c)) return;
+    instructions.push(c);
+    instructionsList.textContent = instructions.join(' ');
+  }
+
+  async function sendInstructions() {
+    if (!playerId) return;
+    if (instructions.length === 0) return;
+    // store under /moves/{playerId}/{pushId}
+    await db.ref(`moves/${playerId}`).push({
+      seq: instructions.slice(),
+      time: Date.now()
+    });
+    // also log as signal
+    await db.ref('signals').push({ signal: instructions.join(''), from: playerId, time: Date.now() });
+    instructions = [];
+    instructionsList.textContent = '';
+  }
+
+  /********** MODO2: FINISH ROUND (COMPARAR SCORES) **********/
+  async function finishMode2Round() {
+    // get scores
+    const snap = await db.ref('scores').once('value');
+    const s = snap.val() || {};
+    // determine winner (highest score)
+    let best = null, bestVal = -1;
+    for (const pid in s) {
+      if ((s[pid] || 0) > bestVal) { bestVal = s[pid]; best = pid; }
+    }
+    if (best) {
+      await db.ref('result').set({ winner: best, score: bestVal, at: Date.now() });
+      resultDiv.textContent = `Ronda terminada. Ganador: ${best} (puntos: ${bestVal})`;
+    } else {
+      resultDiv.textContent = 'Ronda terminada. Sin puntuaciones.';
+    }
+    // reset timer for next round (optional): remove timer so admin can restart
+    // db.ref('timer').remove();
+  }
+
+  /********** UTILS **********/
+  function log(msg) {
+    console.log(msg);
+  }
+
+  /********** Inicialización: observar estado y ofrecer UI de votacion si procede **********/
+  // Show vote area only if there is at least one player in lobby
+  db.ref('players').on('value', (snap) => {
+    const players = snap.val() || {};
+    const n = Object.keys(players).length;
+    // show vote area only if at least one player exists and mode not decided yet
+    db.ref('mode').once('value').then(msnap => {
+      if (!msnap.exists() && n > 0) {
+        voteArea.classList.remove('hidden');
+      } else {
+        voteArea.classList.add('hidden');
+      }
+    });
+  });
+
+  // show mode/result to everyone when result set
+  db.ref('result').on('value', (snap) => {
+    const r = snap.val();
+    if (r) {
+      resultDiv.textContent = `Ganador de la última ronda: ${r.winner} (puntos: ${r.score})`;
+    }
+  });
+
+  // initial UI update
+  updateLobbyUI();
+
+  // Clean up database helpers for development:
+  // If you want to reset the game (clear votes/mode/moves/scores) use:
+  // db.ref().update({ votes: null, mode: null, moves: null, scores: null, timer: null, result: null });
+
+  /********** Nota final **********/
+  // - Este ejemplo es funcional pero minimal. Para producción: gestionar seguridad rules de Firebase (solo permitir writes permitidos),
+  //   manejar casos de reconexión (re-join automático si quieres), y añadir locks para evitar race conditions.
+  // - Si quieres, separo en archivos /js y css, y te doy instrucciones de rutas para Github Pages.
   </script>
 </body>
 </html>
