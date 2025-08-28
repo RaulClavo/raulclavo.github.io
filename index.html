@@ -313,24 +313,24 @@ db.ref('signals').orderByChild('signal').equalTo('START:mode2').on('value', snap
     }
 });
 
-// Escucha la señal de cancelación de partida
-db.ref('signals').on('child_added', snap => {
-    const data = snap.val();
-    if (data && data.signal === "CANCEL_GAME") {
-        // Borra jugadores y señales en todos los clientes
-        db.ref("players").remove();
-        db.ref("signals").remove();
-        cancelGame();
-        updateStatus();
-    }
-});
-
-// Cuando un jugador recarga, envía la señal de cancelación
+// --- Manejar cierre de ventana ---
 window.addEventListener("beforeunload", async function(e) {
     const snap = await db.ref("players").once("value");
     const players = snap.val() || {};
     if (playerId && players[playerId]) {
         await db.ref('signals').push({signal:"CANCEL_GAME", from:playerId, time:Date.now()});
+    }
+});
+
+// Escucha la señal de cancelación de partida
+db.ref('signals').on('child_added', snap => {
+    const data = snap.val();
+    if (data && data.signal === "CANCEL_GAME") {
+        // Borra jugadores en todos los clientes
+        db.ref("players").remove();
+        // Cancela la partida localmente
+        cancelGame();
+        updateStatus();
     }
 });
 </script>
