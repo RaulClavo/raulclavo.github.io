@@ -312,6 +312,24 @@ db.ref('signals').orderByChild('signal').equalTo('START:mode2').on('value', snap
         });
     }
 });
+
+// --- Manejar cierre de ventana ---
+window.addEventListener("beforeunload", async function(e) {
+    // Solo si eres jugador
+    const snap = await db.ref("players").once("value");
+    const players = snap.val() || {};
+    if (playerId && players[playerId]) {
+        // Elimina todos los jugadores
+        await db.ref("players").remove();
+        // Elimina todas las señales
+        await db.ref("signals").remove();
+        // Cancela la partida localmente para todos los clientes conectados
+        db.ref("players").on("value", () => {
+            cancelGame();
+            updateStatus();
+        });
+    }
+});
 </script>
 </body>
 </html>
