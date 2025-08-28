@@ -66,7 +66,6 @@ const db = firebase.database();
 let playerId = null;
 let gameStarted = false;
 let gameMode = null;
-const votes = {};
 const playerQueues = {};
 const boardSize = 5;
 let playerPositions = {};
@@ -117,7 +116,7 @@ joinBtn.onclick = async () => {
     updateStatus();
 };
 
-// ---- Señales ----
+// ---- Señales y Votos ----
 function addSignal(sig){
     if(!playerQueues[playerId]) playerQueues[playerId]=[];
     playerQueues[playerId].push(sig);
@@ -136,24 +135,30 @@ function executeQueue(){
 
 function castVote(mode){
     if(!playerId) return;
-    db.ref('signals').push({signal:"VOTE:"+mode, from:playerId, time:Date.now()});
+    db.ref('votes/'+playerId).set(mode);
 }
 
+// Escuchar votos en tiempo real
+db.ref('votes').on('value', snap=>{
+    const allVotes = snap.val() || {};
+    const entries = Object.entries(allVotes);
+    votesStatus.textContent = entries.map(([pid,mode])=>pid.slice(-4)+"→"+mode).join(" | ") || "Esperando votos...";
+
+    if(!gameStarted && entries.length===2){
+        // calcular resultado
+        const modes = entries.map(e=>e[1]);
+        let chosen;
+        if(modes[0]===modes[1]) chosen = modes[0];
+        else chosen = Math.random()<0.5 ? "mode1" : "mode2";
+        db.ref('signals').push({signal:"START:"+chosen, from:"system", time:Date.now()});
+    }
+});
+
+// Escuchar señales
 db.ref('signals').on('child_added', snap=>{
     const data = snap.val();
     if(!data) return;
-    
-    if(data.signal.startsWith("VOTE:")){
-        votes[data.from] = data.signal.split(":")[1];
-        votesStatus.textContent = Object.entries(votes).map(([pid,m])=>pid.slice(-4)+"→"+m).join(" | ");
-        if(!gameStarted && Object.keys(votes).length>=2){
-            const counts = Object.values(votes).reduce((acc,m)=>{
-                acc[m]=(acc[m]||0)+1; return acc;
-            },{});
-            const selectedMode = counts["mode2"]>counts["mode1"] ? "mode2" : counts["mode1"]>counts["mode2"] ? "mode1" : Math.random()<0.5?"mode1":"mode2";
-            db.ref('signals').push({signal:"START:"+selectedMode, from:"system", time:Date.now()});
-        }
-    } else if(data.signal.startsWith("START:")){
+    if(data.signal.startsWith("START:")){
         startGame(data.signal.split(":")[1]);
     } else if(gameStarted){
         processSignal(data);
@@ -212,7 +217,7 @@ function processSignal(data){
 function renderBoard(){
     boardDiv.innerHTML="";
     if(gameMode==="mode1" || !gameMode){
-        // Modo 1: un tablero con todos los jugadores
+        // Modo 1: un tablero con ambos jugadores
         const b=document.createElement("div");
         b.className="board";
         for(let i=0;i<boardSize;i++){
@@ -235,7 +240,7 @@ function renderBoard(){
         }
         boardDiv.appendChild(b);
     } else if(gameMode==="mode2"){
-        // Modo 2: dos tableros independientes, cada uno con un solo jugador
+        // Modo 2: dos tableros independientes
         const container=document.createElement("div");
         container.id="mode2Container";
         const pids=Object.keys(playerPositions);
