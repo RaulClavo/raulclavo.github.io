@@ -13,6 +13,7 @@
   #board, .board2 { display: grid; grid-template-columns: repeat(5, 60px); grid-gap: 4px; justify-content: center; margin-top:20px; }
   .cell { width: 60px; height: 60px; border: 1px solid #aaa; display:flex; align-items:center; justify-content:center; font-weight:bold; }
   .goal { background: lightgreen; }
+  #mode2Container { display:flex; justify-content: space-around; margin-top:20px; }
 </style>
 </head>
 <body>
@@ -126,7 +127,7 @@ joinBtn.onclick = async () => {
 
 leaveBtn.onclick = async () => {
   if(!playerId) return;
-  await db.ref('players/'+playerId).remove();
+  await db.ref().set(null); // borra toda la base de datos al salir
   playerId=null; playerRef=null;
   cancelGame();
   joinBtn.disabled=false;
@@ -241,8 +242,10 @@ function renderBoard(){
       }
     }
   } else if(gameMode==="mode2"){
+    const container=document.createElement("div");
+    container.id="mode2Container"; container.style.display="flex"; container.style.justifyContent="space-around";
     for(const pid in playerPositions){
-      const wrapper=document.createElement("div"); wrapper.style.margin="10px 0";
+      const wrapper=document.createElement("div");
       const title=document.createElement("div"); title.textContent="Jugador "+pid.slice(-4);
       wrapper.appendChild(title);
       const b=document.createElement("div"); b.className="board2"; b.style.display="grid"; b.style.gridTemplateColumns=`repeat(${boardSize},60px)`;
@@ -260,8 +263,9 @@ function renderBoard(){
         }
       }
       wrapper.appendChild(b);
-      boardDiv.appendChild(wrapper);
+      container.appendChild(wrapper);
     }
+    boardDiv.appendChild(container);
   }
 }
 
