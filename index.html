@@ -90,19 +90,20 @@ joinBtn.onclick = async () => {
     const snap = await db.ref("players").once("value");
     const players = snap.val()||{};
     if(playerId || Object.keys(players).length>=2){
-        alert("Ya hay 2 jugadores, eres espectador");
+        // espectador
         playerId=null;
         controllerArea.style.display="none";
         spectatorArea.style.display="block";
         return;
     }
+    // jugador
     playerId = Date.now().toString();
     await db.ref('players/'+playerId).set({joinedAt: Date.now()});
     controllerArea.style.display="block";
-    spectatorArea.style.display="none"; // oculta tablero si eres jugador
+    spectatorArea.style.display="none"; 
     updateStatus();
 
-    if(Object.keys(players).length===1){ // si ya había 1, arrancamos
+    if(Object.keys(players).length===1){ // arrancar juego
         db.ref('signals').push({signal:"START_MODE2", from:"system", time:Date.now()});
     }
 };
@@ -141,6 +142,7 @@ function startGame(){
     statusDiv.textContent="Juego iniciado (modo 2)";
     spectatorArea.style.display= playerId ? "none" : "block";
 
+    // inicializar posiciones para TODOS (jugadores y espectadores)
     db.ref('players').once('value').then(psnap=>{
         const players = psnap.val()||{};
         const ids = Object.keys(players);
@@ -192,7 +194,7 @@ function renderBoard(){
         wrapper.appendChild(title);
         const b=document.createElement("div");
         b.className="board";
-        const p=playerPositions[pid]; // Solo este jugador
+        const p=playerPositions[pid]; // solo este jugador
         for(let i=0;i<boardSize;i++){
             for(let j=0;j<boardSize;j++){
                 const cell=document.createElement("div");
