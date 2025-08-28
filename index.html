@@ -212,6 +212,7 @@ function processSignal(data){
 function renderBoard(){
     boardDiv.innerHTML="";
     if(gameMode==="mode1" || !gameMode){
+        // Modo 1: un tablero con todos los jugadores
         const b=document.createElement("div");
         b.className="board";
         for(let i=0;i<boardSize;i++){
@@ -234,6 +235,7 @@ function renderBoard(){
         }
         boardDiv.appendChild(b);
     } else if(gameMode==="mode2"){
+        // Modo 2: dos tableros independientes, cada uno con un solo jugador
         const container=document.createElement("div");
         container.id="mode2Container";
         const pids=Object.keys(playerPositions);
@@ -244,20 +246,18 @@ function renderBoard(){
             wrapper.appendChild(title);
             const b=document.createElement("div");
             b.className="board";
+            const p=playerPositions[pid]; // Solo este jugador
             for(let i=0;i<boardSize;i++){
                 for(let j=0;j<boardSize;j++){
                     const cell=document.createElement("div");
                     cell.className="cell";
                     if(i===0 && j===boardSize-1) cell.classList.add("goal");
-                    for(const otherPid in playerPositions){
-                        const p=playerPositions[otherPid];
-                        if(p.x===j && p.y===i){
-                            const span=document.createElement("span");
-                            span.textContent=p.symbol;
-                            span.style.color=p.symbol==="▲"?"red":"blue";
-                            span.style.fontSize="24px";
-                            cell.appendChild(span);
-                        }
+                    if(p.x===j && p.y===i){
+                        const span=document.createElement("span");
+                        span.textContent=p.symbol;
+                        span.style.color=p.symbol==="▲"?"red":"blue";
+                        span.style.fontSize="24px";
+                        cell.appendChild(span);
                     }
                     b.appendChild(cell);
                 }
