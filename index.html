@@ -127,7 +127,7 @@ joinBtn.onclick = async () => {
 
 leaveBtn.onclick = async () => {
   if(!playerId) return;
-  await db.ref().remove(); // elimina absolutamente toda la base de datos
+  await db.ref().remove(); // borra toda la base de datos al salir
   playerId=null; playerRef=null;
   cancelGame();
   joinBtn.disabled=false;
@@ -149,13 +149,38 @@ function executeQueue(){
   const queue = [...playerQueues[playerId]];
   playerQueues[playerId]=[];
   queueDisplay.textContent="Ruta: []";
-  // Solo los jugadores envían señales
-  queue.forEach(sig=>{
-    db.ref('signals').push({signal:sig, from:playerId, time:Date.now()});
-  });
+  processQueue(playerId, queue);
+  queue.forEach(sig=>{ db.ref('signals').push({signal:sig, from:playerId, time:Date.now()}); });
 }
 
-// Procesar señales desde Firebase (espectadores actualizan pantalla)
+function processQueue(pid, queue){
+  let i=0;
+  const interval = setInterval(()=>{
+    if(i>=queue.length){ clearInterval(interval); return; }
+    const sig=queue[i]; i++;
+    const p=playerPositions[pid];
+    if(sig==="FORWARD"){
+      if(p.orientation===0 && p.y>0) p.y--;
+      else if(p.orientation===1 && p.x<boardSize-1) p.x++;
+      else if(sig==="TURN_LEFT") p.orientation=(p.orientation+3)%4;
+      else if(sig==="TURN_RIGHT") p.orientation=(p.orientation+1)%4;
+    } else if(sig==="TURN_LEFT"){ p.orientation=(p.orientation+3)%4; }
+    else if(sig==="TURN_RIGHT"){ p.orientation=(p.orientation+1)%4; }
+    else if(sig==="FORWARD"){
+      if(p.orientation===0 && p.y>0) p.y--;
+      else if(p.orientation===1 && p.x<boardSize-1) p.x++;
+      else if(p.orientation===2 && p.y<boardSize-1) p.y++;
+      else if(p.orientation===3 && p.x>0) p.x--;
+    }
+    renderBoard();
+  }, 500);
+}
+
+function castVote(mode){
+  if(!playerId) return;
+  db.ref('signals').push({signal:"VOTE:"+mode, from:playerId, time:Date.now()});
+}
+
 db.ref('signals').on('child_added', snap=>{
   const data = snap.val();
   if(!data) return;
@@ -164,23 +189,9 @@ db.ref('signals').on('child_added', snap=>{
     votesStatus.textContent = Object.entries(votes).map(([pid,m])=>pid.slice(-4)+"→"+m).join(" | ");
     if(!gameStarted && Object.keys(votes).length>=2){
       const counts = Object.values(votes).reduce((acc,m)=>{ acc[m]=(acc[m]||0)+1; return acc;},{});
-      gameMode = counts["mode2"]>counts["mode1"] ? "mode2" : counts["mode1"]>counts["mode2"] ? "mode1" : "mode1";
+      gameMode = counts["mode2"]>counts["mode1"] ? "mode2" : counts["mode1"]>counts["mode2"] ? "mode1" : Math.random()<0.5?"mode1":"mode2";
       startGame(gameMode);
     }
-  } else {
-    // señales de movimiento
-    const pid = data.from;
-    if(!playerPositions[pid]) playerPositions[pid]={x:0,y:boardSize-1,symbol:Object.keys(playerPositions).length===0?"▲":"●",orientation:0};
-    const p=playerPositions[pid];
-    const sig=data.signal;
-    if(sig==="FORWARD"){
-      if(p.orientation===0 && p.y>0) p.y--;
-      else if(p.orientation===1 && p.x<boardSize-1) p.x++;
-      else if(p.orientation===2 && p.y<boardSize-1) p.y++;
-      else if(p.orientation===3 && p.x>0) p.x--;
-    } else if(sig==="TURN_LEFT"){ p.orientation=(p.orientation+3)%4; }
-    else if(sig==="TURN_RIGHT"){ p.orientation=(p.orientation+1)%4; }
-    renderBoard();
   }
 });
 
@@ -216,7 +227,6 @@ function cancelGame(){
   statusDiv.textContent="Partida cancelada. Vuelve al lobby.";
 }
 
-// ---- Renderizar tablero ----
 function renderBoard(){
   boardDiv.innerHTML="";
   if(gameMode==="mode1" || !gameMode){
@@ -242,7 +252,8 @@ function renderBoard(){
     container.id="mode2Container";
     container.style.display="flex"; container.style.justifyContent="space-around";
 
-    Object.keys(playerPositions).forEach(pid=>{
+    const pids=Object.keys(playerPositions);
+    pids.forEach(pid=>{
       const wrapper=document.createElement("div");
       const title=document.createElement("div"); title.textContent="Jugador "+pid.slice(-4);
       wrapper.appendChild(title);
