@@ -108,7 +108,7 @@ async function updateStatus() {
 
 db.ref("players").on("value", snapshot => {
   const players = snapshot.val()||{};
-  if(gameStarted && Object.keys(players).length<2) cancelGame();
+  if(gameStarted && Object.keys(players).length<2) cancelGame(true);
   updateStatus();
 });
 
@@ -127,14 +127,9 @@ joinBtn.onclick = async () => {
 
 leaveBtn.onclick = async () => {
   if(!playerId) return;
-  await db.ref().remove(); // borra toda la base de datos al salir
-  playerId=null; playerRef=null;
-  cancelGame();
-  joinBtn.disabled=false;
-  leaveBtn.style.display="none";
-  controllerArea.style.display="none";
-  spectatorArea.style.display="none";
-  updateStatus();
+  // Reiniciar toda la base de datos al salir
+  await db.ref().set({});
+  location.reload();
 };
 
 // ---- Señales ----
@@ -149,22 +144,30 @@ function executeQueue(){
   const queue = [...playerQueues[playerId]];
   playerQueues[playerId]=[];
   queueDisplay.textContent="Ruta: []";
-  processQueue(playerId, queue);
-  queue.forEach(sig=>{ db.ref('signals').push({signal:sig, from:playerId, time:Date.now()}); });
+  queue.forEach(sig=>{
+    db.ref('signals').push({signal:sig, from:playerId, time:Date.now()});
+  });
 }
 
-function processQueue(pid, queue){
-  let i=0;
-  const interval = setInterval(()=>{
-    if(i>=queue.length){ clearInterval(interval); return; }
-    const sig=queue[i]; i++;
-    const p=playerPositions[pid];
-    if(sig==="FORWARD"){
-      if(p.orientation===0 && p.y>0) p.y--;
-      else if(p.orientation===1 && p.x<boardSize-1) p.x++;
-      else if(sig==="TURN_LEFT") p.orientation=(p.orientation+3)%4;
-      else if(sig==="TURN_RIGHT") p.orientation=(p.orientation+1)%4;
-    } else if(sig==="TURN_LEFT"){ p.orientation=(p.orientation+3)%4; }
+// ---- Procesar señales ----
+db.ref('signals').on('child_added', snap=>{
+  const data = snap.val();
+  if(!data) return;
+
+  if(data.signal.startsWith("VOTE:")){
+    votes[data.from] = data.signal.split(":")[1];
+    votesStatus.textContent = Object.entries(votes).map(([pid,m])=>pid.slice(-4)+"→"+m).join(" | ");
+    if(!gameStarted && Object.keys(votes).length>=2){
+      const counts = Object.values(votes).reduce((acc,m)=>{ acc[m]=(acc[m]||0)+1; return acc;}, {});
+      gameMode = counts["mode2"]>counts["mode1"] ? "mode2" : counts["mode1"]>counts["mode2"] ? "mode1" : Math.random()<0.5?"mode1":"mode2";
+      startGame(gameMode);
+    }
+  } else {
+    // Señales de movimiento
+    if(!playerPositions[data.from]) return;
+    const p = playerPositions[data.from];
+    const sig = data.signal;
+    if(sig==="TURN_LEFT"){ p.orientation=(p.orientation+3)%4; }
     else if(sig==="TURN_RIGHT"){ p.orientation=(p.orientation+1)%4; }
     else if(sig==="FORWARD"){
       if(p.orientation===0 && p.y>0) p.y--;
@@ -172,28 +175,15 @@ function processQueue(pid, queue){
       else if(p.orientation===2 && p.y<boardSize-1) p.y++;
       else if(p.orientation===3 && p.x>0) p.x--;
     }
-    renderBoard();
-  }, 500);
-}
+    db.ref('positions/'+data.from).set(p); // actualizar posición en firebase
+  }
+});
 
+// ---- Votación ----
 function castVote(mode){
   if(!playerId) return;
   db.ref('signals').push({signal:"VOTE:"+mode, from:playerId, time:Date.now()});
 }
-
-db.ref('signals').on('child_added', snap=>{
-  const data = snap.val();
-  if(!data) return;
-  if(data.signal.startsWith("VOTE:")){
-    votes[data.from] = data.signal.split(":")[1];
-    votesStatus.textContent = Object.entries(votes).map(([pid,m])=>pid.slice(-4)+"→"+m).join(" | ");
-    if(!gameStarted && Object.keys(votes).length>=2){
-      const counts = Object.values(votes).reduce((acc,m)=>{ acc[m]=(acc[m]||0)+1; return acc;},{});
-      gameMode = counts["mode2"]>counts["mode1"] ? "mode2" : counts["mode1"]>counts["mode2"] ? "mode1" : Math.random()<0.5?"mode1":"mode2";
-      startGame(gameMode);
-    }
-  }
-});
 
 // ---- Juego ----
 function startGame(mode){
@@ -209,14 +199,23 @@ function startGame(mode){
     const ids = Object.keys(players);
     playerPositions={};
     ids.forEach((pid,i)=>{
-      playerPositions[pid]={x:0,y:boardSize-1,symbol:i===0?"▲":"●",orientation:0};
+      const symbol = i===0?"▲":"●";
+      playerPositions[pid]={x:0,y:boardSize-1,symbol: symbol, orientation:0};
       playerQueues[pid]=[];
+      db.ref('positions/'+pid).set(playerPositions[pid]);
     });
     renderBoard();
   });
 }
 
-function cancelGame(){
+// Escuchar posiciones para renderizado en tiempo real
+db.ref('positions').on('value', snap=>{
+  const pos = snap.val()||{};
+  playerPositions = pos;
+  renderBoard();
+});
+
+function cancelGame(reset=false){
   gameStarted=false;
   voteArea.style.display="none";
   controllerArea.style.display="none";
@@ -225,10 +224,13 @@ function cancelGame(){
   playerQueues={};
   gameMode=null;
   statusDiv.textContent="Partida cancelada. Vuelve al lobby.";
+  if(reset) location.reload();
 }
 
+// ---- Renderizado ----
 function renderBoard(){
   boardDiv.innerHTML="";
+  const pids = Object.keys(playerPositions);
   if(gameMode==="mode1" || !gameMode){
     const b=document.createElement("div"); b.className="board";
     for(let i=0;i<boardSize;i++){
@@ -248,15 +250,16 @@ function renderBoard(){
     }
     boardDiv.appendChild(b);
   } else if(gameMode==="mode2"){
-    const container=document.createElement("div");
-    container.id="mode2Container";
-    container.style.display="flex"; container.style.justifyContent="space-around";
+    const container=document.createElement("div"); container.id="mode2Container";
 
-    const pids=Object.keys(playerPositions);
     pids.forEach(pid=>{
+      // Solo mostrar el tablero si el espectador o jugador diferente
+      if(playerId===pid) return;
+
       const wrapper=document.createElement("div");
       const title=document.createElement("div"); title.textContent="Jugador "+pid.slice(-4);
       wrapper.appendChild(title);
+
       const b=document.createElement("div"); b.className="board";
       for(let i=0;i<boardSize;i++){
         for(let j=0;j<boardSize;j++){
@@ -271,6 +274,7 @@ function renderBoard(){
           b.appendChild(cell);
         }
       }
+
       wrapper.appendChild(b);
       container.appendChild(wrapper);
     });
