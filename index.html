@@ -1,280 +1,271 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <meta charset="UTF-8">
-  <title>Juego en Vivo</title>
-  <style>
-    body { font-family: Arial; text-align: center; margin-top: 20px; }
-    button { margin: 5px; padding: 10px 18px; font-size: 16px; }
-    #status { margin: 14px 0; font-size: 18px; font-weight: bold; }
-    #voteArea, #controllerArea, #spectatorArea { display:none; margin-top:20px; }
-    #votesStatus { margin-top: 8px; font-style: italic; }
-    #playersInfo { margin-top: 8px; }
-    #board, .board2 { display: grid; grid-template-columns: repeat(5, 60px); grid-gap: 4px; justify-content: center; margin-top:20px; }
-    .cell { width: 60px; height: 60px; border: 1px solid #aaa; display:flex; align-items:center; justify-content:center; font-weight:bold; }
-    .goal { background: lightgreen; }
-  </style>
+<meta charset="UTF-8">
+<title>Juego en Vivo</title>
+<style>
+  body { font-family: Arial; text-align: center; margin-top: 20px; }
+  button { margin: 5px; padding: 10px 18px; font-size: 16px; }
+  #status { margin: 14px 0; font-size: 18px; font-weight: bold; }
+  #voteArea, #controllerArea, #spectatorArea { display:none; margin-top:20px; }
+  #votesStatus { margin-top: 8px; font-style: italic; }
+  #playersInfo { margin-top: 8px; }
+  #board, .board2 { display: grid; grid-template-columns: repeat(5, 60px); grid-gap: 4px; justify-content: center; margin-top:20px; }
+  .cell { width: 60px; height: 60px; border: 1px solid #aaa; display:flex; align-items:center; justify-content:center; font-weight:bold; }
+  .goal { background: lightgreen; }
+</style>
 </head>
 <body>
-  <h1>Juego en Vivo</h1>
+<h1>Juego en Vivo</h1>
 
-  <div id="status">Comprobando estado...</div>
+<div id="status">Comprobando estado...</div>
 
-  <div>
-    <button id="joinBtn">Unirse</button>
-    <button id="leaveBtn" style="display:none;">Salir</button>
-  </div>
+<div>
+  <button id="joinBtn">Unirse</button>
+  <button id="leaveBtn" style="display:none;">Salir</button>
+</div>
 
-  <div id="playersInfo"></div>
+<div id="playersInfo"></div>
 
-  <!-- Votación -->
-  <div id="voteArea">
-    <h3>Votación del modo</h3>
-    <button onclick="castVote('mode1')">Modo 1 — Una pantalla</button>
-    <button onclick="castVote('mode2')">Modo 2 — Dos pantallas</button>
-    <div id="votesStatus">Esperando votos...</div>
-  </div>
+<!-- Votación -->
+<div id="voteArea">
+  <h3>Votación del modo</h3>
+  <button onclick="castVote('mode1')">Modo 1 — Una pantalla</button>
+  <button onclick="castVote('mode2')">Modo 2 — Dos pantallas</button>
+  <div id="votesStatus">Esperando votos...</div>
+</div>
 
-  <!-- Área de mando (jugadores) -->
-  <div id="controllerArea">
-    <h2>Mando del Jugador</h2>
-    <button onclick="addSignal('FORWARD')">Avanzar</button>
-    <button onclick="addSignal('TURN_LEFT')">Girar Izq</button>
-    <button onclick="addSignal('TURN_RIGHT')">Girar Der</button>
-    <button onclick="executeQueue()">Ejecutar ruta</button>
-    <div id="queueDisplay">Ruta: []</div>
-  </div>
+<!-- Área de mando (jugadores) -->
+<div id="controllerArea">
+  <h2>Mando del Jugador</h2>
+  <button onclick="addSignal('FORWARD')">Avanzar</button>
+  <button onclick="addSignal('TURN_LEFT')">Girar Izq</button>
+  <button onclick="addSignal('TURN_RIGHT')">Girar Der</button>
+  <button onclick="executeQueue()">Ejecutar ruta</button>
+  <div id="queueDisplay">Ruta: []</div>
+</div>
 
-  <!-- Área de espectador -->
-  <div id="spectatorArea">
-    <h2>Juego en curso</h2>
-    <div id="board"></div>
-  </div>
+<!-- Área de espectador -->
+<div id="spectatorArea">
+  <h2>Juego en curso</h2>
+  <div id="board"></div>
+</div>
 
-  <!-- Firebase v8 -->
-  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+<!-- Firebase v8 -->
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
 
-  <script>
-    const firebaseConfig = {
-      apiKey: "AIzaSyDGYEYs5YFZqMpcU0rJSeLxdzCt1iaumis",
-      authDomain: "welcomedayarise.firebaseapp.com",
-      databaseURL: "https://welcomedayarise-default-rtdb.europe-west1.firebasedatabase.app",
-      projectId: "welcomedayarise",
-      storageBucket: "welcomedayarise.firebasestorage.app",
-      messagingSenderId: "417894091538",
-      appId: "1:417894091538:web:a2eab16a056dfc902881cb",
-      measurementId: "G-8ZXHLVM20C"
-    };
-    firebase.initializeApp(firebaseConfig);
-    const db = firebase.database();
+<script>
+const firebaseConfig = {
+  apiKey: "AIzaSyDGYEYs5YFZqMpcU0rJSeLxdzCt1iaumis",
+  authDomain: "welcomedayarise.firebaseapp.com",
+  databaseURL: "https://welcomedayarise-default-rtdb.europe-west1.firebasedatabase.app",
+  projectId: "welcomedayarise",
+  storageBucket: "welcomedayarise.firebasestorage.app",
+  messagingSenderId: "417894091538",
+  appId: "1:417894091538:web:a2eab16a056dfc902881cb",
+  measurementId: "G-8ZXHLVM20C"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
 
-    let playerId = null;
-    let playerRef = null;
-    let gameStarted = false;
-    let gameMode = null;
+let playerId = null;
+let playerRef = null;
+let gameStarted = false;
+let gameMode = null;
 
-    const votes = {};
-    const playerQueues = {};
+const votes = {};
+const playerQueues = {};
+const boardSize = 5;
+let playerPositions = {};
 
-    const joinBtn = document.getElementById("joinBtn");
-    const leaveBtn = document.getElementById("leaveBtn");
-    const statusDiv = document.getElementById("status");
-    const playersInfo = document.getElementById("playersInfo");
-    const voteArea = document.getElementById("voteArea");
-    const votesStatus = document.getElementById("votesStatus");
-    const controllerArea = document.getElementById("controllerArea");
-    const spectatorArea = document.getElementById("spectatorArea");
-    const queueDisplay = document.getElementById("queueDisplay");
-    const boardDiv = document.getElementById("board");
+const joinBtn = document.getElementById("joinBtn");
+const leaveBtn = document.getElementById("leaveBtn");
+const statusDiv = document.getElementById("status");
+const playersInfo = document.getElementById("playersInfo");
+const voteArea = document.getElementById("voteArea");
+const votesStatus = document.getElementById("votesStatus");
+const controllerArea = document.getElementById("controllerArea");
+const spectatorArea = document.getElementById("spectatorArea");
+const queueDisplay = document.getElementById("queueDisplay");
+const boardDiv = document.getElementById("board");
 
-    const boardSize = 5;
-    let playerPositions = {}; // {playerId:{x,y,symbol,orientation}}
+// ---- Lobby ----
+async function updateStatus() {
+  const snap = await db.ref("players").once("value");
+  const players = snap.val() || {};
+  const ids = Object.keys(players);
+  playersInfo.innerHTML = `Jugadores: ${ids.length}/2 <br> ${ids.join(", ") || "—"}`;
 
-    // ---- Lobby ----
-    async function updateStatus() {
-      const snap = await db.ref("players").once("value");
-      const players = snap.val() || {};
-      const ids = Object.keys(players);
-      playersInfo.innerHTML = `Jugadores: ${ids.length}/2 <br> ${ids.join(", ") || "—"}`;
+  if(playerId && !gameStarted) statusDiv.textContent = "Estás jugando";
+  else if(!playerId && ids.length<2) statusDiv.textContent = `Huecos libres: ${2-ids.length}`;
+  else if(!playerId && ids.length>=2) statusDiv.textContent = "Eres espectador";
 
-      if (playerId && !gameStarted) statusDiv.textContent = "Estás jugando";
-      else if (!playerId && ids.length < 2) statusDiv.textContent = `Huecos libres: ${2-ids.length}`;
-      else if (!playerId && ids.length >= 2) statusDiv.textContent = "Eres espectador";
+  if(playerId && ids.length===2 && !gameStarted) voteArea.style.display="block";
+  else voteArea.style.display="none";
+}
 
-      if (playerId && ids.length === 2 && !gameStarted) voteArea.style.display = "block";
-      else voteArea.style.display = "none";
+db.ref("players").on("value", snapshot => {
+  const players = snapshot.val()||{};
+  if(gameStarted && Object.keys(players).length<2) cancelGame();
+  updateStatus();
+});
+
+joinBtn.onclick = async () => {
+  const snap = await db.ref("players").once("value");
+  const players = snap.val()||{};
+  if(playerId || Object.keys(players).length>=2){ alert("Ya hay 2 jugadores, eres espectador"); return; }
+  playerId = Date.now().toString();
+  playerRef = db.ref('players/'+playerId);
+  await playerRef.set({joinedAt: Date.now()});
+  playerRef.onDisconnect().remove();
+  joinBtn.disabled = true;
+  leaveBtn.style.display = "inline-block";
+  updateStatus();
+};
+
+leaveBtn.onclick = async () => {
+  if(!playerId) return;
+  await db.ref('players/'+playerId).remove();
+  playerId=null; playerRef=null;
+  cancelGame();
+  joinBtn.disabled=false;
+  leaveBtn.style.display="none";
+  controllerArea.style.display="none";
+  spectatorArea.style.display="none";
+  updateStatus();
+};
+
+// ---- Señales ----
+function addSignal(sig){
+  if(!playerQueues[playerId]) playerQueues[playerId]=[];
+  playerQueues[playerId].push(sig);
+  queueDisplay.textContent="Ruta: ["+playerQueues[playerId].join(",")+"]";
+}
+
+function executeQueue(){
+  if(!playerQueues[playerId] || playerQueues[playerId].length===0) return;
+  const queue = [...playerQueues[playerId]];
+  playerQueues[playerId]=[];
+  queueDisplay.textContent="Ruta: []";
+  processQueue(playerId, queue);
+  queue.forEach(sig=>{ db.ref('signals').push({signal:sig, from:playerId, time:Date.now()}); });
+}
+
+function processQueue(pid, queue){
+  let i=0;
+  const interval = setInterval(()=>{
+    if(i>=queue.length){ clearInterval(interval); return; }
+    const sig=queue[i]; i++;
+    const p=playerPositions[pid];
+    if(sig==="FORWARD"){
+      if(p.orientation===0 && p.y>0) p.y--;
+      else if(p.orientation===1 && p.x<boardSize-1) p.x++;
+      else if(p.orientation===2 && p.y<boardSize-1) p.y++;
+      else if(p.orientation===3 && p.x>0) p.x--;
+    } else if(sig==="TURN_LEFT"){ p.orientation=(p.orientation+3)%4; }
+    else if(sig==="TURN_RIGHT"){ p.orientation=(p.orientation+1)%4; }
+    renderBoard();
+  }, 500);
+}
+
+function castVote(mode){
+  if(!playerId) return;
+  db.ref('signals').push({signal:"VOTE:"+mode, from:playerId, time:Date.now()});
+}
+
+db.ref('signals').on('child_added', snap=>{
+  const data = snap.val();
+  if(!data) return;
+  if(data.signal.startsWith("VOTE:")){
+    votes[data.from] = data.signal.split(":")[1];
+    votesStatus.textContent = Object.entries(votes).map(([pid,m])=>pid.slice(-4)+"→"+m).join(" | ");
+    if(!gameStarted && Object.keys(votes).length>=2){
+      const counts = Object.values(votes).reduce((acc,m)=>{ acc[m]=(acc[m]||0)+1; return acc;},{});
+      if(!counts["mode1"]) counts["mode1"]=0;
+      if(!counts["mode2"]) counts["mode2"]=0;
+      gameMode = counts["mode2"]>counts["mode1"] ? "mode2" : counts["mode1"]>counts["mode2"] ? "mode1" : Math.random()<0.5?"mode1":"mode2";
+      startGame(gameMode);
     }
-    db.ref("players").on("value", snapshot => {
-      const players = snapshot.val() || {};
-      if(gameStarted && Object.keys(players).length<2) cancelGame();
-      updateStatus();
+  }
+});
+
+// ---- Juego ----
+function startGame(mode){
+  if(gameStarted) return;
+  gameMode=mode; gameStarted=true;
+  voteArea.style.display="none";
+  controllerArea.style.display=playerId?"block":"none";
+  spectatorArea.style.display="block";
+  statusDiv.textContent="Juego iniciado ("+mode+")";
+
+  db.ref('players').once('value').then(psnap=>{
+    const players = psnap.val()||{};
+    const ids = Object.keys(players);
+    playerPositions={};
+    ids.forEach((pid,i)=>{
+      playerPositions[pid]={x:0,y:boardSize-1,symbol:i===0?"▲":"●",orientation:0};
+      playerQueues[pid]=[];
     });
+    renderBoard();
+  });
+}
 
-    joinBtn.onclick = async () => {
-      const snap = await db.ref("players").once("value");
-      const players = snap.val() || {};
-      if(playerId || Object.keys(players).length>=2) { alert("Ya hay 2 jugadores, eres espectador"); return; }
-      playerId = Date.now().toString();
-      playerRef = db.ref('players/' + playerId);
-      await playerRef.set({ joinedAt: Date.now() });
-      playerRef.onDisconnect().remove();
-      joinBtn.disabled = true;
-      leaveBtn.style.display = "inline-block";
-      updateStatus();
-    };
+function cancelGame(){
+  gameStarted=false;
+  voteArea.style.display="none";
+  controllerArea.style.display="none";
+  spectatorArea.style.display="none";
+  playerPositions={};
+  playerQueues={};
+  gameMode=null;
+  statusDiv.textContent="Partida cancelada. Vuelve al lobby.";
+}
 
-    leaveBtn.onclick = async () => {
-      if(!playerId) return;
-      await db.ref('players/' + playerId).remove();
-      playerId = null;
-      playerRef = null;
-      cancelGame();
-      joinBtn.disabled = false;
-      leaveBtn.style.display = "none";
-      controllerArea.style.display = "none";
-      spectatorArea.style.display = "none";
-      updateStatus();
-    };
-
-    // ---- Señales ----
-    function addSignal(sig){
-      if(!playerQueues[playerId]) playerQueues[playerId]=[];
-      playerQueues[playerId].push(sig);
-      queueDisplay.textContent = "Ruta: ["+playerQueues[playerId].join(",")+"]";
-    }
-
-    function executeQueue(){
-      if(!playerQueues[playerId] || playerQueues[playerId].length===0) return;
-      const queue = [...playerQueues[playerId]];
-      playerQueues[playerId]=[];
-      queueDisplay.textContent = "Ruta: []";
-      queue.forEach(signal=>{
-        db.ref('signals').push({signal, from: playerId, time: Date.now()});
-      });
-    }
-
-    function castVote(mode){
-      if(!playerId) return;
-      db.ref('signals').push({signal:"VOTE:"+mode, from:playerId, time:Date.now()});
-    }
-
-    db.ref('signals').on('child_added', snap=>{
-      const data = snap.val();
-      if(!data) return;
-
-      if(data.signal.startsWith("VOTE:")){
-        votes[data.from] = data.signal.split(":")[1];
-        votesStatus.textContent = Object.entries(votes).map(([pid,m])=>pid.slice(-4)+"→"+m).join(" | ");
-        const voterIds = Object.keys(votes);
-        if(!gameStarted && voterIds.length>=2){
-          const count = Object.values(votes).reduce((acc,m)=>{acc[m]=(acc[m]||0)+1; return acc;},{});
-          if(!count["mode1"]) count["mode1"]=0;
-          if(!count["mode2"]) count["mode2"]=0;
-          gameMode = count["mode1"]===count["mode2"] ? (Math.random()<0.5?"mode1":"mode2") : (count["mode2"]>count["mode1"]?"mode2":"mode1");
-          startGame(gameMode);
-        }
-      } else if(gameStarted){
-        // Mover jugador según señal
-        if(!playerPositions[data.from]) return;
-        const p = playerPositions[data.from];
-        switch(data.signal){
-          case "FORWARD":
-            if(p.orientation===0 && p.y>0) p.y--;
-            else if(p.orientation===1 && p.x<boardSize-1) p.x++;
-            else if(p.orientation===2 && p.y<boardSize-1) p.y++;
-            else if(p.orientation===3 && p.x>0) p.x--;
-            break;
-          case "TURN_LEFT":
-            p.orientation = (p.orientation+3)%4; break;
-          case "TURN_RIGHT":
-            p.orientation = (p.orientation+1)%4; break;
-        }
-        renderBoard();
-      }
-    });
-
-    // ---- Juego ----
-    function startGame(mode){
-      if(gameStarted) return;
-      gameStarted=true;
-      voteArea.style.display="none";
-      statusDiv.textContent="Juego iniciado ("+mode+")";
-
-      db.ref('players').once('value').then(psnap=>{
-        const players = psnap.val()||{};
-        const ids = Object.keys(players);
-        playerPositions={};
-        ids.forEach((pid,i)=>{
-          playerPositions[pid]={x:0,y:boardSize-1,symbol:i===0?"▲":"●",orientation:0};
-          playerQueues[pid]=[];
-        });
-
-        if(playerId) controllerArea.style.display="block";
-        spectatorArea.style.display="block";
-        renderBoard();
-      });
-    }
-
-    function cancelGame(){
-      gameStarted=false;
-      voteArea.style.display="none";
-      controllerArea.style.display="none";
-      spectatorArea.style.display="none";
-      playerPositions={};
-      playerQueues={};
-      gameMode=null;
-      statusDiv.textContent="Partida cancelada. Vuelve al lobby.";
-    }
-
-    function renderBoard(){
-      boardDiv.innerHTML="";
-      if(gameMode==="mode1"){
-        for(let i=0;i<boardSize;i++){
-          for(let j=0;j<boardSize;j++){
-            const cell=document.createElement("div"); cell.className="cell";
-            if(i===0 && j===boardSize-1) cell.classList.add("goal");
-            for(const pid in playerPositions){
-              const p=playerPositions[pid];
-              if(p.x===j && p.y===i){
-                const span=document.createElement("span");
-                span.textContent=p.symbol;
-                span.style.color=p.symbol==="▲"?"red":"blue";
-                span.style.fontSize="24px";
-                cell.appendChild(span);
-              }
-            }
-            boardDiv.appendChild(cell);
-          }
-        }
-      } else if(gameMode==="mode2"){
-        boardDiv.innerHTML="";
-        // dos tableros, uno por jugador
+function renderBoard(){
+  boardDiv.innerHTML="";
+  if(gameMode==="mode1" || !gameMode){
+    for(let i=0;i<boardSize;i++){
+      for(let j=0;j<boardSize;j++){
+        const cell=document.createElement("div"); cell.className="cell";
+        if(i===0 && j===boardSize-1) cell.classList.add("goal");
         for(const pid in playerPositions){
-          const wrapper=document.createElement("div"); wrapper.style.margin="10px 0";
-          const title=document.createElement("div"); title.textContent="Jugador "+pid.slice(-4);
-          wrapper.appendChild(title);
-          const b=document.createElement("div"); b.className="board2"; b.style.display="grid"; b.style.gridTemplateColumns=`repeat(${boardSize},60px)`; 
-          for(let i=0;i<boardSize;i++){
-            for(let j=0;j<boardSize;j++){
-              const cell=document.createElement("div"); cell.className="cell";
-              if(i===0 && j===boardSize-1) cell.classList.add("goal");
-              const p=playerPositions[pid];
-              if(p.x===j && p.y===i){
-                const span=document.createElement("span"); span.textContent=p.symbol;
-                span.style.color=p.symbol==="▲"?"red":"blue"; span.style.fontSize="24px";
-                cell.appendChild(span);
-              }
-              b.appendChild(cell);
-            }
+          const p=playerPositions[pid];
+          if(p.x===j && p.y===i){
+            const span=document.createElement("span"); span.textContent=p.symbol;
+            span.style.color=p.symbol==="▲"?"red":"blue"; span.style.fontSize="24px";
+            cell.appendChild(span);
           }
-          wrapper.appendChild(b);
-          boardDiv.appendChild(wrapper);
         }
+        boardDiv.appendChild(cell);
       }
     }
+  } else if(gameMode==="mode2"){
+    for(const pid in playerPositions){
+      const wrapper=document.createElement("div"); wrapper.style.margin="10px 0";
+      const title=document.createElement("div"); title.textContent="Jugador "+pid.slice(-4);
+      wrapper.appendChild(title);
+      const b=document.createElement("div"); b.className="board2"; b.style.display="grid"; b.style.gridTemplateColumns=`repeat(${boardSize},60px)`;
+      for(let i=0;i<boardSize;i++){
+        for(let j=0;j<boardSize;j++){
+          const cell=document.createElement("div"); cell.className="cell";
+          if(i===0 && j===boardSize-1) cell.classList.add("goal");
+          const p=playerPositions[pid];
+          if(p.x===j && p.y===i){
+            const span=document.createElement("span"); span.textContent=p.symbol;
+            span.style.color=p.symbol==="▲"?"red":"blue"; span.style.fontSize="24px";
+            cell.appendChild(span);
+          }
+          b.appendChild(cell);
+        }
+      }
+      wrapper.appendChild(b);
+      boardDiv.appendChild(wrapper);
+    }
+  }
+}
 
-    updateStatus();
-  </script>
+updateStatus();
+</script>
 </body>
 </html>
