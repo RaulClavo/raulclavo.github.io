@@ -114,7 +114,9 @@ joinBtn.onclick = async () => {
     playerId = Date.now().toString();
     await db.ref('players/'+playerId).set({joinedAt: Date.now()});
     controllerArea.style.display="block";
-    spectatorArea.style.display="none"; // <-- Oculta el área de espectador al unirse
+    spectatorArea.style.display="none"; // Oculta el área de espectador al unirse
+    joinBtn.disabled = true; // Desactiva el botón de unirse
+    statusDiv.style.display = "none"; // Oculta el mensaje de estado
     updateStatus();
 };
 
