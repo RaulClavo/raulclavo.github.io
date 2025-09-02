@@ -283,10 +283,16 @@ function startGame(mode){
     controllerArea.style.display=playerId?"block":"none";
     spectatorArea.style.display = playerId ? "none" : "block";
     statusDiv.textContent="Juego iniciado ("+mode+")";
-    currentLevel = 0;
-    playerTimes = {};
-    playerScores = {};
-    syncLevel(currentLevel);
+
+    db.ref('players').once('value').then(psnap=>{
+        const players = psnap.val()||{};
+        const ids = Object.keys(players);
+        playerPositions={};
+        ids.forEach((pid,i)=>{
+            playerPositions[pid]={x:0,y:boardSize-1,symbol:i===0?"▲":"●",orientation:0};
+        });
+        renderBoard();
+    });
 }
 
 function cancelGame(){
