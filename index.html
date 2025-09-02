@@ -81,6 +81,117 @@ const spectatorArea = document.getElementById("spectatorArea");
 const queueDisplay = document.getElementById("queueDisplay");
 const boardDiv = document.getElementById("board");
 
+let currentLevel = 0;
+let levels = [];
+let playerTimes = {};
+let playerScores = {};
+let levelStartTime = null;
+let mode2Timer = null;
+
+// Genera un nivel aleatorio (matriz de obstáculos, aquí solo ejemplo sin obstáculos)
+function generateLevel(seed=null) {
+    // Si quieres obstáculos, puedes añadirlos aquí
+    // Por simplicidad, solo el objetivo en (0, boardSize-1)
+    return {
+        goal: {x: boardSize-1, y: 0},
+        obstacles: [] // Ejemplo: [{x:2,y:2}]
+    };
+}
+
+// Sincroniza el nivel para ambos jugadores
+function syncLevel(levelNum) {
+    let seed = Date.now(); // Usar un seed para que ambos tengan el mismo nivel
+    const level = generateLevel(seed);
+    levels[levelNum] = level;
+    db.ref('signals').push({signal:"LEVEL:"+levelNum+":"+JSON.stringify(level), from:"system", time:Date.now()});
+}
+
+// Procesa la llegada al objetivo
+function checkGoal(pid) {
+    const level = levels[currentLevel];
+    const p = playerPositions[pid];
+    if (p.x === level.goal.x && p.y === level.goal.y) {
+        // Guarda tiempo
+        const elapsed = Date.now() - levelStartTime;
+        if (!playerTimes[pid]) playerTimes[pid] = [];
+        playerTimes[pid].push(elapsed);
+
+        if (gameMode === "mode1") {
+            currentLevel++;
+            if (currentLevel < 5) {
+                syncLevel(currentLevel);
+                levelStartTime = Date.now();
+            } else {
+                // Fin de partida
+                endGameMode1();
+            }
+        } else if (gameMode === "mode2") {
+            if (!playerScores[pid]) playerScores[pid] = 0;
+            playerScores[pid]++;
+            currentLevel++;
+            syncLevel(currentLevel);
+            // No reiniciamos el timer, solo cuenta niveles
+        }
+    }
+}
+
+// Modo 1: suma tiempos y muestra ganador
+function endGameMode1() {
+    let results = Object.entries(playerTimes).map(([pid, times]) => {
+        const total = times.reduce((a,b)=>a+b,0);
+        return {pid, total};
+    });
+    results.sort((a,b)=>a.total-b.total);
+    statusDiv.textContent = `¡Fin! Ganador: ${results[0].pid.slice(-4)} (${(results[0].total/1000).toFixed(2)}s)`;
+    controllerArea.style.display = "none";
+    spectatorArea.style.display = "block";
+}
+
+// Modo 2: cuenta atrás y muestra ganador
+function startMode2Timer() {
+    let timeLeft = 60;
+    mode2Timer = setInterval(()=>{
+        timeLeft--;
+        statusDiv.textContent = `Tiempo restante: ${timeLeft}s`;
+        if (timeLeft <= 0) {
+            clearInterval(mode2Timer);
+            endGameMode2();
+        }
+    }, 1000);
+}
+
+function endGameMode2() {
+    let results = Object.entries(playerScores).map(([pid, score]) => {
+        return {pid, score};
+    });
+    results.sort((a,b)=>b.score-a.score);
+    statusDiv.textContent = `¡Fin! Ganador: ${results[0].pid.slice(-4)} (${results[0].score} niveles)`;
+    controllerArea.style.display = "none";
+    spectatorArea.style.display = "block";
+}
+
+// Escucha el inicio de nivel
+db.ref('signals').on('child_added', snap => {
+    const data = snap.val();
+    if (data.signal.startsWith("LEVEL:")) {
+        const [,levelNum,levelStr] = data.signal.split(":");
+        levels[parseInt(levelNum)] = JSON.parse(levelStr);
+        currentLevel = parseInt(levelNum);
+        // Reinicia posiciones
+        db.ref('players').once('value').then(psnap=>{
+            const players = psnap.val()||{};
+            const ids = Object.keys(players);
+            playerPositions={};
+            ids.forEach((pid,i)=>{
+                playerPositions[pid]={x:0,y:boardSize-1,symbol:i===0?"▲":"●",orientation:0};
+            });
+            renderBoard();
+            levelStartTime = Date.now();
+            if (gameMode === "mode2" && currentLevel === 0) startMode2Timer();
+        });
+    }
+});
+
 // ---- Lobby ----
 async function updateStatus() {
     const snap = await db.ref("players").once("value");
@@ -170,19 +281,12 @@ function startGame(mode){
     gameStarted=true;
     voteArea.style.display="none";
     controllerArea.style.display=playerId?"block":"none";
-    // Solo mostrar el área de espectador si NO eres jugador
     spectatorArea.style.display = playerId ? "none" : "block";
     statusDiv.textContent="Juego iniciado ("+mode+")";
-
-    db.ref('players').once('value').then(psnap=>{
-        const players = psnap.val()||{};
-        const ids = Object.keys(players);
-        playerPositions={};
-        ids.forEach((pid,i)=>{
-            playerPositions[pid]={x:0,y:boardSize-1,symbol:i===0?"▲":"●",orientation:0};
-        });
-        renderBoard();
-    });
+    currentLevel = 0;
+    playerTimes = {};
+    playerScores = {};
+    syncLevel(currentLevel);
 }
 
 function cancelGame(){
@@ -207,6 +311,7 @@ function processSignal(data){
         else if(p.orientation===1 && p.x<boardSize-1) p.x++;
         else if(p.orientation===2 && p.y<boardSize-1) p.y++;
         else if(p.orientation===3 && p.x>0) p.x--;
+        checkGoal(pid); // <-- Añade esto
     } else if(sig==="TURN_LEFT") p.orientation=(p.orientation+3)%4;
     else if(sig==="TURN_RIGHT") p.orientation=(p.orientation+1)%4;
 
