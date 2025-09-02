@@ -260,12 +260,16 @@ function cancelGame(){
 
 function checkGoal(pid) {
     if(gameMode === "mode2") {
-        // Suma nivel para el jugador
-        nivelesPorJugador[pid]++;
-        nivelActualPorJugador[pid]++;
-        levelDataPorJugador[pid] = generateLevel(Date.now() + Math.floor(Math.random()*10000));
-        playerPositions[pid] = {x:0, y:boardSize-1, symbol:playerPositions[pid].symbol, orientation:0};
-        renderBoard();
+        const p = playerPositions[pid];
+        const level = levelDataPorJugador[pid];
+        // Solo suma nivel si está en la meta
+        if (p.x === level.goal.x && p.y === level.goal.y) {
+            nivelesPorJugador[pid]++;
+            nivelActualPorJugador[pid]++;
+            levelDataPorJugador[pid] = generateLevel(Date.now() + Math.floor(Math.random()*10000));
+            playerPositions[pid] = {x:0, y:boardSize-1, symbol:playerPositions[pid].symbol, orientation:0};
+            renderBoard();
+        }
         return;
     }
     // ...modo 1 como antes...
