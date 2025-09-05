@@ -574,10 +574,17 @@ db.ref('signals').orderByChild('signal').equalTo('START:mode2').on('value', snap
 
 // --- Manejar cierre de ventana ---
 window.addEventListener("beforeunload", async function(e) {
-    const snap = await db.ref("players").once("value");
-    const players = snap.val() || {};
-    if (playerId && players[playerId]) {
-        await db.ref('signals').push({signal:"CANCEL_GAME", from:playerId, time:Date.now()});
+    // Si el jugador está unido pero la partida NO ha empezado (fase de votación)
+    if (playerId && !gameStarted) {
+        await db.ref('players/' + playerId).remove();
+    }
+    // Si la partida está activa y eres jugador, cancela la partida como antes
+    if (gameStarted && playerId && controllerArea.style.display === "block") {
+        const snap = await db.ref("players").once("value");
+        const players = snap.val() || {};
+        if (players[playerId]) {
+            await db.ref('signals').push({signal:"CANCEL_GAME", from:playerId, time:Date.now()});
+        }
     }
 });
 
