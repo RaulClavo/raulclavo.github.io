@@ -415,38 +415,70 @@ function renderBoard(){
     boardDiv.appendChild(b);
 }
 
-// Genera un nivel aleatorio con obstáculos y meta aleatoria
 function generateLevel(seed = Date.now()) {
-    // PRNG simple para sincronizar niveles
     function random() {
         seed = (seed * 9301 + 49297) % 233280;
         return seed / 233280;
     }
-    // Meta aleatoria (no en la casilla de inicio)
-    let goal;
-    do {
-        goal = {
-            x: Math.floor(random() * boardSize),
-            y: Math.floor(random() * boardSize)
-        };
-    } while (goal.x === 0 && goal.y === boardSize - 1);
 
-    // Obstáculos aleatorios (máx 5, sin tapar inicio ni meta)
+    let goal;
     let obstacles = [];
     let used = {};
-    used[`0,${boardSize-1}`] = true;
-    used[`${goal.x},${goal.y}`] = true;
     let maxObstacles = 5;
-    while (obstacles.length < maxObstacles) {
-        let ox = Math.floor(random() * boardSize);
-        let oy = Math.floor(random() * boardSize);
-        let key = `${ox},${oy}`;
-        if (!used[key]) {
-            obstacles.push({x: ox, y: oy});
-            used[key] = true;
+    let valid = false;
+
+    while (!valid) {
+        // Genera meta aleatoria
+        do {
+            goal = {
+                x: Math.floor(random() * boardSize),
+                y: Math.floor(random() * boardSize)
+            };
+        } while (goal.x === 0 && goal.y === boardSize - 1);
+
+        // Genera obstáculos aleatorios
+        obstacles = [];
+        used = {};
+        used[`0,${boardSize-1}`] = true;
+        used[`${goal.x},${goal.y}`] = true;
+        while (obstacles.length < maxObstacles) {
+            let ox = Math.floor(random() * boardSize);
+            let oy = Math.floor(random() * boardSize);
+            let key = `${ox},${oy}`;
+            if (!used[key]) {
+                obstacles.push({x: ox, y: oy});
+                used[key] = true;
+            }
+        }
+
+        // Comprueba si hay camino usando BFS
+        valid = isReachable(0, boardSize-1, goal.x, goal.y, obstacles);
+    }
+
+    return {goal, obstacles};
+}
+
+// Comprueba si hay camino entre inicio y meta usando BFS
+function isReachable(sx, sy, gx, gy, obstacles) {
+    const queue = [[sx, sy]];
+    const visited = Array(boardSize).fill(0).map(()=>Array(boardSize).fill(false));
+    const obstacleSet = new Set(obstacles.map(o=>`${o.x},${o.y}`));
+    visited[sy][sx] = true;
+
+    while (queue.length) {
+        const [x, y] = queue.shift();
+        if (x === gx && y === gy) return true;
+        const dirs = [[0,1],[1,0],[0,-1],[-1,0]];
+        for (const [dx,dy] of dirs) {
+            const nx = x+dx, ny = y+dy;
+            if (nx>=0 && nx<boardSize && ny>=0 && ny<boardSize &&
+                !visited[ny][nx] && !obstacleSet.has(`${nx},${ny}`)) {
+                visited[ny][nx] = true;
+                queue.push([nx,ny]);
+            }
         }
     }
-    return {goal, obstacles};
+    return false;
 }
 
 function mostrarResultadosModo1() {
